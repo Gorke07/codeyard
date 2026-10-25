@@ -101,6 +101,8 @@ mod texttools;
 mod trash;
 mod tree;
 mod ui;
+mod update;
+mod update_install;
 mod vscode;
 mod workbench;
 mod workspace_file;

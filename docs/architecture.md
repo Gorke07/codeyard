@@ -71,8 +71,29 @@ into private state any other way.
 | Spelling | `spellbook` (pure Rust Hunspell) | English built in, other languages installable |
 
 No server, no account, no plugin store. The only outbound requests are the ones the user triggers: SchemaStore and
-schema downloads (cached 7 days, can be disabled), dictionary installs, GitHub pull request listing and
-requests sent from `.http` files.
+schema downloads (cached 7 days, can be disabled), dictionary installs, GitHub pull request listing,
+requests sent from `.http` files and update checks. The app contacts the network on its own only when the user chose
+daily update checks (`update.check`); otherwise an update check happens when the user asks for one.
+
+## Updates
+
+`update.rs` (check, download, verification) and `update_install.rs` (installing) hold everything except the UI.
+
+- **What is fetched.** From `<repository>/releases/latest/download/` (`CODEYARD_UPDATE_URL` replaces it): `SHA256SUMS.txt` and
+  `SHA256SUMS.txt.sig` (at most 64 KiB and exactly 64 bytes). Only when the signed list names a newer version: `RELEASE_NOTES.md`
+  (256 KiB) and, when the user agrees, the installer for this platform (400 MiB). No GitHub API, no token, nothing is sent but
+  the request itself. The requests are made by the system `curl` (https only, TLS 1.2+, five redirects, timeouts).
+- **What is verified, in this order.** The Ed25519 signature over the exact bytes of `SHA256SUMS.txt` against the public keys
+  built into the app (`TRUSTED_KEYS`, a list so that a key can be rotated); only then is the list parsed. The version comes
+  from the signed asset names (`x.y.z`, digits only) and is offered only if it is strictly newer than the running one. The
+  notes and the installer must match their signed SHA-256; the installer is hashed again right before it is mounted or run.
+- **When.** `Policy::Daily` (setting `update.check`) checks at most once in 24 hours; `Ask` and `Manual` never check by
+  themselves. A check never installs anything: download and install are separate steps that need the user's confirmation.
+- **Installing.** macOS, app bundle in a writable folder: the disk image is mounted read-only at a private mount point, the app
+  is copied next to the installed one, then checked (bundle identifier, version, `codesign --verify --deep --strict`), then
+  swapped by two renames that are undone on failure. Windows, Inno installation: the verified setup program runs silently.
+  Everything else (debug builds, bare binaries, Linux, a portable zip, a read-only `/Applications`) is `Manual`: the UI shows
+  the release page.
 
 ## Local state
 

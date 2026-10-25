@@ -674,7 +674,7 @@ pub(crate) fn crash_dir() -> Option<std::path::PathBuf> {
     state_path()?.parent().map(|d| d.join("crashes"))
 }
 
-fn state_path() -> Option<std::path::PathBuf> {
+pub(crate) fn state_path() -> Option<std::path::PathBuf> {
     if let Some(dir) = std::env::var_os("CODEYARD_STATE_DIR") {
         return Some(std::path::PathBuf::from(dir).join("state.db"));
     }

@@ -80,8 +80,16 @@ Root: HKA; Subkey: "{code:EnvKey}"; ValueType: expandsz; ValueName: "Path"; Valu
 
 [Run]
 Filename: "{app}\Codeyard.exe"; Description: "Launch Codeyard"; Flags: nowait postinstall skipifsilent
+; In-app update (crates/app/src/update_install.rs runs Setup with /SILENT ... /relaunch=1): start the new version once.
+; Setup's own restart of closed applications is turned off there (/NORESTARTAPPLICATIONS), so this is the only launch.
+Filename: "{app}\Codeyard.exe"; Flags: nowait runasoriginaluser; Check: RelaunchAfterUpdate
 
 [Code]
+function RelaunchAfterUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:relaunch|0}') = '1';
+end;
+
 function EnvKey(Param: string): string;
 begin
   if IsAdminInstallMode then

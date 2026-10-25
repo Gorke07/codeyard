@@ -23,6 +23,7 @@ All variables are optional. `scripts/docs-check.sh` fails when the code reads a 
 
 | Variable | Effect |
 | --- | --- |
+| `CODEYARD_UPDATE_URL` | Replaces `<repository>/releases/latest/download` as the place update files are fetched from (a mirror, or a local `http://` server or `file://` folder to try the updater). Only the download location changes: the signature check with the built-in keys still applies. |
 | `CODEYARD_DEV` | Enable developer commands in a release build (always on in debug builds). |
 | `CODEYARD_MENU_FLAVOR` | `macos`, `windows` or `linux`: draw menus in that platform's style instead of the running one (to review the other platforms' look). |
 | `CODEYARD_DO_DELAY_MS` | Delay before `--do "Command;Command"` runs its commands. |

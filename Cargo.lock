@@ -177,6 +177,7 @@ dependencies = [
  "pulldown-cmark",
  "raw-window-handle",
  "regex",
+ "ring",
  "schema",
  "serde_json",
  "sha2 0.11.1",

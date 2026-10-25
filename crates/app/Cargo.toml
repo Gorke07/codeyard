@@ -25,6 +25,8 @@ nucleo-matcher = "0.3.1"
 proto = { version = "0.1.0", path = "../proto" }
 schema = { version = "0.1.0", path = "../schema" }
 sha2 = "0.11.1"
+# Ed25519 verification of the update manifest; already in the tree through rustls, so no new code ships.
+ring = { version = "0.17.14", default-features = false }
 serde_json = "1.0.154"
 spell = { version = "0.1.0", path = "../spell" }
 state = { version = "0.1.0", path = "../state" }
@@ -41,6 +43,8 @@ path = "src/main.rs"
 accesskit_consumer = "0.39.1"
 agent = { version = "0.1.0", path = "../agent" }
 gpui = { version = "=0.2.2", features = ["test-support"] }
+# Tests generate a throw-away signing key.
+ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
 
 # macOS: Dock icon (also when run unbundled: cargo run, bare binary).
 [target.'cfg(target_os = "macos")'.dependencies]
