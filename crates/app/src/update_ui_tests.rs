@@ -1710,5 +1710,8 @@ fn a_folder_that_is_gone_is_said_so_and_the_other_windows_still_open(cx: &mut Te
     cx.run_until_parked();
     let (error, message) = first.read_with(cx, |wb, _| wb.notice_for_test()).unwrap().expect("a notice");
     assert!(!error && message.contains("no longer exists"), "{message}");
-    assert_eq!(made[0].read_with(cx, |wb, cx| wb.root_for_test(cx)).unwrap().as_deref(), Some(ok.as_str()));
+    // `canonicalize` gives `\\?\C:\…` on Windows; the workbench keeps the plain `C:/…` form of the same folder.
+    let plain = |p: &str| p.trim_start_matches(r"\\?\").replace('\\', "/");
+    let root = made[0].read_with(cx, |wb, cx| wb.root_for_test(cx)).unwrap().unwrap();
+    assert_eq!(plain(&root), plain(&ok));
 }
