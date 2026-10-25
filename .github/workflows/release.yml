@@ -205,7 +205,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "$GITHUB_REF_NAME" --notes-file notes/notes.md --verify-tag
-      - name: Dry run: show what would be published
+      - name: Dry run, show what would be published
         if: github.ref_type != 'tag'
         run: |
           echo "Dry run: no release created. Files that would be attached:"
