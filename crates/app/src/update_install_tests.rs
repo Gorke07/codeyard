@@ -78,7 +78,8 @@ fn update_relaunch_waits_for_the_process_to_exit_then_opens_the_app() {
     let (dir, _g) = scratch("relaunch");
     let marker = dir.join("opened");
     let opener = dir.join("fake-open");
-    write(&opener, &format!("#!/bin/sh\necho \"$@\" > '{}'\n", marker.display()));
+    // printf, not echo: dash's echo would swallow the leading `-n` as its own option.
+    write(&opener, &format!("#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\n", marker.display()));
     std::fs::set_permissions(&opener, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let mut target = Command::new("sleep").arg("0.6").spawn().unwrap();
