@@ -18,7 +18,7 @@ it again. Unnotarized builds also need **right-click ▸ Open** on first launch,
 | *Reconnecting* in the status bar | The connection dropped; the agent keeps your terminals and watches alive for 5 minutes. If it gives up you get the reason and a **Reconnect** button; open files and unsaved edits stay in their tabs. |
 | *Permission denied (publickey)* | Add the key to the server (**Remote: Set Up Key Login…**) or point the host at the right `IdentityFile` (**Remote: Edit SSH Host…**). |
 | An upload or download stopped | A cancelled or failed transfer only removes what it created. Existing folders are never deleted. |
-| `ControlPath too long` | The app falls back to a short socket directory. |
+| `ControlPath too long` | The app keeps its control sockets in `/tmp/cy-<uid>` instead of the home folder; if that directory is unsafe it connects without sharing. |
 
 ## Language servers
 

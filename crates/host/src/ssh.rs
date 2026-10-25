@@ -137,39 +137,113 @@ impl AgentBundle {
     }
 }
 
-fn control_dir() -> PathBuf {
-    control_dir_for(&std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir))
+/// Longest control socket we ask ssh to bind, including the `.` + 16 random characters it appends while binding
+/// (it renames the socket into place afterwards). `sun_path` holds 108 bytes on Linux and 104 on macOS, both
+/// counting the NUL, so 90 leaves a margin for platforms we have not looked at.
+#[cfg(unix)]
+const MAX_SOCKET: usize = 90;
+#[cfg(unix)]
+const SSH_BIND_SUFFIX: usize = 17;
+
+/// Where the control sockets live: `<home>/.cache/codeyard`, or a short private directory when that would push the
+/// socket past `MAX_SOCKET`. `None` means no safe directory exists: the caller then runs without connection sharing.
+#[cfg(unix)]
+fn control_dir() -> Option<PathBuf> {
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::geteuid() };
+    control_dir_in(&std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir), Path::new("/tmp"), uid)
 }
 
-/// ControlMaster socket dir: `<home>/.cache/codeyard`. Unix socket paths are limited to ~104 bytes (macOS) and ssh
-/// appends `cm-%C` (43 bytes). With a long home (long username, network home, test dirs) ssh fails with
-/// "ControlPath too long", so a short dir derived from `home` (`/tmp/cy-<digest>`) is used instead. Made
-/// 0700.
-fn control_dir_for(home: &Path) -> PathBuf {
-    const MAX_SOCKET: usize = 100;
+/// Windows OpenSSH has no ControlMaster; the directory only holds the dev agent's socket.
+#[cfg(not(unix))]
+fn control_dir() -> Option<PathBuf> {
+    let dir = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join(".cache").join(APP_DIR);
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// `short_base` is `/tmp` and not `$TMPDIR`, which on macOS is itself ~50 bytes (`/var/folders/..`).
+#[cfg(unix)]
+fn control_dir_in(home: &Path, short_base: &Path, uid: u32) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
     let preferred = home.join(".cache").join(APP_DIR);
-    let dir = if preferred.as_os_str().len() + "/cm-".len() + 40 <= MAX_SOCKET && cfg!(unix) {
-        preferred
-    } else if cfg!(unix) {
-        let hash: String = Sha256::digest(home.as_os_str().as_encoded_bytes()).iter().take(4).map(|b| format!("{b:02x}")).collect();
-        PathBuf::from(format!("/tmp/cy-{hash}"))
-    } else {
-        preferred
-    };
-    let _ = std::fs::create_dir_all(&dir);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    if preferred.as_os_str().as_bytes().len() <= MAX_DIR && private_dir(&preferred, None).is_ok() {
+        return Some(preferred);
     }
-    dir
+    // The shared base is world-writable, so another user may have squatted the name: `private_dir` refuses
+    // anything that is not a real directory owned by us.
+    let short = short_base.join(format!("cy-{uid}"));
+    private_dir(&short, Some(uid)).ok().map(|()| short)
+}
+
+/// Longest directory that still leaves room for `/cm-<16 hex>` and ssh's bind suffix.
+#[cfg(unix)]
+const MAX_DIR: usize = MAX_SOCKET - SSH_BIND_SUFFIX - SOCKET_NAME_LEN - 1;
+#[cfg(unix)]
+const SOCKET_NAME_LEN: usize = "cm-".len() + 16;
+
+/// Create `dir` (0700) if needed and make sure it is a real directory only we can enter. With `owner`, an existing
+/// entry must also belong to that uid: it may sit in a shared sticky directory like `/tmp`, where a symlink or a
+/// directory planted by another user would otherwise receive our sockets. We own what passes the check and
+/// the sticky bit stops others from renaming it, so tightening the mode afterwards is not racy.
+#[cfg(unix)]
+fn private_dir(dir: &Path, owner: Option<u32>) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    let check = |want_private: bool| -> std::io::Result<()> {
+        // symlink_metadata: a symlink must not be followed to wherever it points.
+        let md = std::fs::symlink_metadata(dir)?;
+        if !md.is_dir() {
+            return Err(Error::new(ErrorKind::PermissionDenied, "not a directory"));
+        }
+        if owner.is_some_and(|uid| md.uid() != uid) {
+            return Err(Error::new(ErrorKind::PermissionDenied, "owned by another user"));
+        }
+        if want_private && md.mode() & 0o077 != 0 {
+            return Err(Error::new(ErrorKind::PermissionDenied, "accessible to others"));
+        }
+        Ok(())
+    };
+    check(false)?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    check(true)
+}
+
+/// The control socket for `alias`: `<dir>/cm-<16 hex>`. ssh's own `%C` is 40 hex characters and cannot be shortened,
+/// so we hash the alias ourselves; the alias fixes host, user and port through ssh config. 64 bits
+/// make a collision between the handful of aliases a person has negligible, and one would only reuse the wrong
+/// connection, never expose a socket.
+#[cfg(unix)]
+fn control_path(alias: &str) -> Option<PathBuf> {
+    Some(control_path_in(&control_dir()?, alias))
+}
+
+#[cfg(unix)]
+fn control_path_in(dir: &Path, alias: &str) -> PathBuf {
+    let hash: String = Sha256::digest(alias.as_bytes()).iter().take(8).map(|b| format!("{b:02x}")).collect();
+    dir.join(format!("cm-{hash}"))
+}
+
+/// ssh expands `%` tokens and splits option values at whitespace, so a path goes in escaped and quoted.
+#[cfg(unix)]
+fn control_path_option(path: &Path) -> String {
+    let p = path.to_string_lossy().replace('%', "%%").replace('\\', "\\\\").replace('"', "\\\"");
+    format!("ControlPath=\"{p}\"")
 }
 
 /// All `ssh` calls share one ControlMaster connection: auth happens once,
 /// later calls take milliseconds.
 /// Common options: a separate ssh config (`CODEYARD_SSH_CONFIG`, for tests and
 /// non-standard setups) and the shared ControlMaster socket.
-fn ssh_base() -> Command {
+fn ssh_base(alias: &str) -> Command {
     let mut cmd = Command::new("ssh");
     #[cfg(windows)]
     {
@@ -183,9 +257,15 @@ fn ssh_base() -> Command {
     }
     #[cfg(unix)]
     {
-        let dir = control_dir();
-        let _ = std::fs::create_dir_all(&dir);
-        cmd.arg("-o").arg(format!("ControlPath={}/cm-%C", dir.display()));
+        match control_path(alias) {
+            Some(path) => cmd.arg("-o").arg(control_path_option(&path)),
+            // No safe directory: connect without sharing (ssh keeps the first value it sees for an option).
+            None => cmd.args(["-o", "ControlMaster=no", "-o", "ControlPath=none"]),
+        };
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = alias;
     }
     cmd
 }
@@ -272,7 +352,7 @@ pub fn list_wsl() -> std::result::Result<Vec<String>, String> {
 
 fn ssh_command(alias: &str) -> Command {
     MASTERS.lock().unwrap_or_else(|e| e.into_inner()).insert(alias.to_string());
-    let mut cmd = ssh_base();
+    let mut cmd = ssh_base(alias);
     // Password / passphrase / host key are asked via the window prompt;
     // with no bridge (CLI, tests) don't ask, fail at once.
     if !crate::askpass::configure(&mut cmd) {
@@ -453,7 +533,7 @@ pub fn forward_port(alias: &str, local: u16, remote: u16, cancel: bool) -> Resul
     if !matches!(target_of(alias), Target::Ssh(_)) {
         return Err(HostError::Op(proto::Error::Other("Port forwarding needs an SSH host: containers and WSL share the local network".into())));
     }
-    let out = ssh_base()
+    let out = ssh_base(alias)
         .args(["-o", "BatchMode=yes", "-O", if cancel { "cancel" } else { "forward" }, "-L"])
         .arg(format!("{local}:localhost:{remote}"))
         .arg(alias)
@@ -480,7 +560,7 @@ pub fn forward_port_reverse(alias: &str, remote: u16, local: u16, cancel: bool) 
     if !matches!(target_of(alias), Target::Ssh(_)) {
         return Err(HostError::Op(proto::Error::Other("Port forwarding needs an SSH host: containers and WSL share the local network".into())));
     }
-    let out = ssh_base()
+    let out = ssh_base(alias)
         .args(["-o", "BatchMode=yes", "-O", if cancel { "cancel" } else { "forward" }, "-R"])
         .arg(format!("{remote}:localhost:{local}"))
         .arg(alias)
@@ -503,7 +583,7 @@ pub fn close_master(alias: &str) {
     if !matches!(target_of(alias), Target::Ssh(_)) {
         return;
     }
-    let _ = ssh_base().args(["-o", "BatchMode=yes", "-O", "exit"]).arg(alias).stdin(Stdio::null()).output();
+    let _ = ssh_base(alias).args(["-o", "BatchMode=yes", "-O", "exit"]).arg(alias).stdin(Stdio::null()).output();
 }
 
 /// On exit: close every ControlMaster this process opened. `ControlPersist`
@@ -531,7 +611,7 @@ pub fn new_session_id(salt: &str) -> String {
 /// Killing the bridge process (`--attach`) behaves like an ssh drop.
 pub fn spawn_local_agent(bundle: &AgentBundle) -> Result<RemoteHost> {
     let bin = bundle.find(local_triple()).ok_or_else(|| HostError::Disconnected("local codeyard-agent not found (cargo build -p agent)".into()))?;
-    let socket = control_dir().join(format!("dev-agent-v{}.sock", proto::VERSION));
+    let socket = control_dir().unwrap_or_else(std::env::temp_dir).join(format!("dev-agent-v{}.sock", proto::VERSION));
     let connector: Connector = Arc::new(move || {
         let mut cmd = Command::new(&bin);
         cmd.arg("--attach").arg(&socket);
@@ -589,20 +669,121 @@ Match host foo\n  User nope\n";
         assert_eq!(hosts[2].hostname.as_deref(), Some("web.example.com"));
     }
 
+    /// Scratch directory under the system temp dir, removed on drop.
+    #[cfg(unix)]
+    struct Scratch(PathBuf);
+    #[cfg(unix)]
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            // /tmp, not temp_dir(): macOS's is long enough to trigger the fallback by itself.
+            let dir = Path::new("/tmp").join(format!("cy-ssh-test-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+    }
+    #[cfg(unix)]
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// What ssh really binds: the path plus `.` and 16 random characters; macOS allows 103 bytes, Linux 107.
+    #[cfg(unix)]
+    fn bound_len(path: &Path) -> usize {
+        use std::os::unix::ffi::OsStrExt;
+        path.as_os_str().as_bytes().len() + SSH_BIND_SUFFIX
+    }
+
     #[cfg(unix)]
     #[test]
-    fn the_control_socket_path_always_fits_the_unix_limit() {
-        let short = Path::new("/home/ada");
-        assert_eq!(control_dir_for(short), Path::new("/home/ada/.cache/codeyard"));
-        let long = Path::new("/private/var/folders/03/cn805mq932l504sb9kfvz89r0000gn/T/a-very-long-home-directory-name/ada");
-        let dir = control_dir_for(long);
-        assert!(dir.to_string_lossy().starts_with("/tmp/cy-"), "{dir:?}");
-        // The socket ssh creates: <dir>/cm-<40 hex>.
-        assert!(dir.as_os_str().len() + 4 + 40 <= 104, "{dir:?}");
-        assert_eq!(control_dir_for(long), dir, "stable for the same home");
-        assert_ne!(control_dir_for(Path::new("/private/var/folders/03/cn805mq932l504sb9kfvz89r0000gn/T/another-long-home-directory-xyz/bob")), dir);
+    fn the_control_socket_path_fits_for_any_home_length() {
+        let scratch = Scratch::new("len");
+        let short_base = scratch.0.join("tmp");
+        std::fs::create_dir_all(&short_base).unwrap();
+        let me = std::os::unix::fs::MetadataExt::uid(&std::fs::metadata(&short_base).unwrap());
+        let aliases = ["web", "prod-eu-west-1.internal.example.com", "çok-uzun-sunucu-adı-🚀-".repeat(12).leak(), "user@host:2222"];
+        for len in 1..=200 {
+            // A home of exactly `len` bytes below the scratch dir (a single component grows without a limit).
+            let home = scratch.0.join("h".repeat(len));
+            let dir = control_dir_in(&home, &short_base, me).unwrap_or_else(|| panic!("no dir for home of {len} bytes"));
+            for alias in aliases {
+                let path = control_path_in(&dir, alias);
+                assert!(bound_len(&path) <= MAX_SOCKET, "{len}: {path:?} binds {} bytes", bound_len(&path));
+            }
+            assert!(dir == home.join(".cache").join(APP_DIR) || dir == short_base.join(format!("cy-{me}")), "{dir:?}");
+            let _ = std::fs::remove_dir_all(&home);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_short_home_keeps_the_socket_in_its_cache() {
+        let scratch = Scratch::new("short");
+        let home = scratch.0.join("h");
+        let dir = control_dir_in(&home, &scratch.0, 0).unwrap();
+        assert_eq!(dir, home.join(".cache").join(APP_DIR));
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700, "only the user can enter it");
+        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_socket_name_is_stable_and_tells_hosts_apart() {
+        let dir = Path::new("/d");
+        let a = control_path_in(dir, "web");
+        assert_eq!(a, control_path_in(dir, "web"));
+        let others = ["web2", "Web", "deploy@web", "web:2222", "deploy@web:2222", ""];
+        let mut seen = std::collections::BTreeSet::from([a]);
+        for o in others {
+            assert!(seen.insert(control_path_in(dir, o)), "{o:?} collides");
+        }
+        assert_eq!(control_path_in(dir, "web").file_name().unwrap().len(), SOCKET_NAME_LEN);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_short_fallback_dir_is_private_and_refuses_impostors() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+        let scratch = Scratch::new("fallback");
+        let base = scratch.0.join("tmp");
+        std::fs::create_dir_all(&base).unwrap();
+        let home = scratch.0.join("h".repeat(150));
+        let me = std::fs::metadata(&base).unwrap().uid();
+
+        // Created 0700 even when the umask is loose, and reused on the next call.
+        let dir = control_dir_in(&home, &base, me).unwrap();
+        assert_eq!(dir, base.join(format!("cy-{me}")));
+        assert_eq!(std::fs::metadata(&dir).unwrap().mode() & 0o777, 0o700);
+        assert_eq!(control_dir_in(&home, &base, me), Some(dir.clone()));
+
+        // A directory that is too open is tightened (it is ours).
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(control_dir_in(&home, &base, me), Some(dir.clone()));
+        assert_eq!(std::fs::metadata(&dir).unwrap().mode() & 0o777, 0o700);
+
+        // A directory that belongs to someone else (here: we pretend to be another uid) is refused.
+        assert!(private_dir(&dir, Some(me.wrapping_add(1))).is_err(), "owned by another uid");
+
+        // A symlink planted at the name is never followed, even when it points at a directory we own.
+        std::fs::remove_dir(&dir).unwrap();
+        let target = scratch.0.join("elsewhere");
+        std::fs::create_dir_all(&target).unwrap();
+        symlink(&target, &dir).unwrap();
+        assert_eq!(control_dir_in(&home, &base, me), None);
+        assert_eq!(std::fs::read_dir(&target).unwrap().count(), 0, "nothing was put behind the link");
+
+        // A plain file in the way is refused as well.
+        std::fs::remove_file(&dir).unwrap();
+        std::fs::write(&dir, b"").unwrap();
+        assert_eq!(control_dir_in(&home, &base, me), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_control_path_option_survives_ssh_parsing() {
+        assert_eq!(control_path_option(Path::new("/a b/100%/cm-1")), r#"ControlPath="/a b/100%%/cm-1""#);
     }
 
     #[test]

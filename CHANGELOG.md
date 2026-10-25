@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- SSH connections no longer fail when the home folder path is long (the control socket path exceeded the Unix socket limit).
+
 ## [0.1.0] - 2026-10-25
 
 First public release: a small native code editor for local folders and remote servers over SSH, written in Rust on GPUI.

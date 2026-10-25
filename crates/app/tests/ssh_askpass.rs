@@ -92,7 +92,10 @@ fn ssh_questions_reach_the_window_and_answers_reach_ssh() {
         eprintln!("SKIPPED: no /usr/sbin/sshd or ssh-keygen (set CODEYARD_REQUIRE_SSHD=1 to make this an error)");
         return;
     };
-    let home = fx.dir.join("home");
+    // Long on purpose: a deep home (CI runner, container, long user name) overflowed the control socket's
+    // Unix path limit and every connection failed. Keep it past the point where the app must use its short dir.
+    let home = fx.dir.join("a-deliberately-long-home-directory-for-the-control-socket-path").join("home");
+    assert!(home.as_os_str().len() > 90, "{home:?} must stay long");
     std::fs::create_dir_all(&home).unwrap();
     // SAFETY: a single test; no other thread in the process is reading environment variables yet.
     unsafe {

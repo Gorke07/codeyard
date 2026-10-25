@@ -6,9 +6,10 @@ files, search, terminals, git and language servers goes through that one interfa
 
 ## Connection
 
-- Transport: the system `ssh` with `ControlMaster=auto` and `ControlPersist=600`. Control sockets live in a private
-  directory; when the home directory path is too long for a Unix socket (`ControlPath too long`) a short directory
-  (`/tmp/cy-<hash>`, mode 0700) is used instead. Control masters opened by the app are closed on exit.
+- Transport: the system `ssh` with `ControlMaster=auto` and `ControlPersist=600`. Control sockets are named `cm-<16 hex>` (a hash of the host alias) and live in
+  `~/.cache/codeyard`; when that path is too long for a Unix socket (limit 104 bytes on macOS, 108 on Linux, and ssh adds 17 while
+  binding) they go to `/tmp/cy-<uid>` (mode 0700). The app refuses that directory if it is a symlink or belongs to another user,
+  and then connects without sharing. Control masters opened by the app are closed on exit.
 - Scripts the app runs on the server are wrapped in `sh -c`, so they do not depend on the user's login shell.
   Programs (git, language servers) are found through the login shell so the user's `PATH` applies.
 - Agent install: on first connect the app detects the architecture (`uname -sm`), copies the bundled static agent
