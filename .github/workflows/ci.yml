@@ -1,0 +1,115 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR supersedes the previous run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Metal toolchain (GPUI shaders)
+        run: xcodebuild -downloadComponent MetalToolchain || true
+      - run: scripts/arch-check.sh   # also checks the vendor patches (scripts/check-gpui-patches.sh)
+      - run: scripts/docs-check.sh
+      - run: cargo fmt --all --check
+      # Our crates only: the patched copies under vendor/ are not linted.
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      # The budgets are for Retina; the runner has a 1x display and measures lower, so
+      # this only catches gross regressions. The real measurement is the maintainer's machine.
+      - run: scripts/memcheck.sh
+
+  # Dependency gate: licences, known vulnerabilities, yanked versions, sources (deny.toml).
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # RustSec scan of Cargo.lock; accepted exceptions are in .cargo/audit.toml (scripts/audit.sh).
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked
+      - run: scripts/audit.sh
+
+  # Optional coverage, started by hand only (takes minutes). The result is uploaded as an artifact.
+  coverage:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+      - run: xcodebuild -downloadComponent MetalToolchain || true
+      - run: cargo install cargo-llvm-cov --locked
+      - run: scripts/coverage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+
+  # The crates that do not depend on GPUI, plus the musl agent and its size limit
+  # (the agent runs on Linux servers).
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - run: cargo test -p proto -p agent -p host -p buffer -p state -p syntax -p theme
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --profile release-agent -p agent --target x86_64-unknown-linux-musl
+      - run: test $(du -k target/x86_64-unknown-linux-musl/release-agent/codeyard-agent | cut -f1) -le 1600
+
+  # Experimental: the full workspace, GPUI included, on Linux. Not a gate: it may fail without
+  # blocking a merge. The package list is derived from the Linux dependencies of vendor/gpui
+  # (xkbcommon links libxkbcommon and libxkbcommon-x11; xcb, fontconfig and freetype are
+  # linked or probed through pkg-config) and has not been confirmed on a runner yet.
+  linux-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: GPUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config git openssh-server \
+            libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
+            libfontconfig-dev libfreetype-dev libwayland-dev libvulkan-dev
+      - run: cargo test --workspace
+
+  # The same checks run locally with scripts/check-windows.ps1.
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Windows native checks
+        shell: pwsh
+        run: ./scripts/check-windows.ps1

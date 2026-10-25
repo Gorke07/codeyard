@@ -1,0 +1,12 @@
+[package]
+name = "spell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Hunspell spell checking, tokenizer rules and dictionary installation"
+repository.workspace = true
+publish = false
+
+[dependencies]
+# Hunspell-compatible, pure-Rust spell checker.
+spellbook = "0.4.2"

@@ -1,0 +1,26 @@
+# cargo-audit (RustSec) policy. `scripts/audit.sh` runs `cargo audit --deny warnings` against Cargo.lock:
+# any vulnerability, yanked crate, or NEW unmaintained/unsound warning is red. Every ID below is an explicit,
+# reviewed exception (triage date 2026-10-25, cargo-audit 0.22.2). Zero of them are vulnerabilities.
+# All of these come in transitively through GPUI (pinned in vendor/gpui, see vendor/gpui/PATCHES.md), except
+# atomic-polyfill (postcard -> heapless 0.7, used by crates/proto). Re-triage on every GPUI upgrade.
+
+[advisories]
+ignore = [
+    # unmaintained, via gpui (no fix without a GPUI upgrade)
+    "RUSTSEC-2025-0052", # async-std: discontinued; gpui_http_client -> zed-async-tar
+    "RUSTSEC-2024-0384", # instant: gpui_util -> futures-lite 1.x -> fastrand 1.x
+    "RUSTSEC-2024-0436", # paste: metal / gpui macros
+    "RUSTSEC-2026-0173", # proc-macro-error2: stacksafe-macro (build-time only)
+    "RUSTSEC-2025-0134", # rustls-pemfile: zed-reqwest (reads PEM roots only)
+    "RUSTSEC-2026-0206", # rustybuzz 0.14 (cosmic-text) and 0.20 (usvg): text shaping, no fixed successor in GPUI 0.2.2
+    "RUSTSEC-2026-0192", # ttf-parser 0.20/0.21/0.25: same font stack
+    "RUSTSEC-2026-0370", # zvariant: Linux-only (zbus -> ashpd/oo7), not compiled on macOS/Windows
+    "RUSTSEC-2026-0371", # zbus_names: same
+    "RUSTSEC-2026-0372", # zvariant_derive: same
+    # unmaintained, via our own dependency
+    "RUSTSEC-2023-0089", # atomic-polyfill: postcard 1.1 -> heapless 0.7; no-op on 64-bit targets we ship; revisit when postcard drops heapless 0.7
+    # unsound in git2 0.20.4, pulled only by gpui_util for its test helper (gpui_util/src/test.rs: Repository::init).
+    # Neither Remote::list() nor BlameHunk signatures are called anywhere in this workspace or in GPUI.
+    "RUSTSEC-2026-0183", # git2: Remote::list()
+    "RUSTSEC-2026-0184", # git2: Signature from buffer-created BlameHunk
+]

@@ -1,0 +1,45 @@
+name: Translation
+description: Fix a translation, or offer to translate Codeyard into a new language
+labels: ["translation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. The rules and the tools are in [docs/translating.md](https://github.com/doancan/codeyard/blob/main/docs/translating.md).
+        A pull request is welcome right away; this form is for coordination.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is this about?
+      options:
+        - A wrong or unnatural translation in an existing language
+        - A new language
+        - A string that cannot be translated (word order, plural, context)
+        - Something that is not translated
+    validations:
+      required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language (code and name)
+      description: For example `tr` Türkçe, `pt-BR` Português (Brasil).
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: The English text, what the translation says now, what it should say, and where you saw it. A screenshot helps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Codeyard version
+      description: "`codeyard --version`"
+  - type: checkboxes
+    id: native
+    attributes:
+      label: About you
+      options:
+        - label: I speak this language natively

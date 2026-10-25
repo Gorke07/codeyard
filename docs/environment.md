@@ -1,0 +1,34 @@
+# Environment variables
+
+All variables are optional. `scripts/docs-check.sh` fails when the code reads a `CODEYARD_*` variable that is not listed here.
+
+## For users
+
+| Variable | Effect |
+| --- | --- |
+| `CODEYARD_STATE_DIR` | Folder for the local state database, crash reports and backups (default: `~/Library/Application Support/codeyard` on macOS, `~/.local/state/codeyard` elsewhere). |
+| `CODEYARD_CONFIG_DIR` | Folder for `settings.jsonc`, `keybindings.jsonc`, `themes/`, `snippets/`, `projects.jsonc` (default `~/.config/codeyard`). |
+| `CODEYARD_SSH_CONFIG` | Use this file instead of `~/.ssh/config` for host lists and connections. |
+| `CODEYARD_AGENT_DIR` | Where the app looks for the bundled `codeyard-agent-<triple>` binaries (default: `agents/` next to the executable). |
+| `CODEYARD_REMOTE_DIR` | Where the agent is installed on the server (default `~/.cache/codeyard`). |
+| `CODEYARD_NO_A11Y` | Set to disable the macOS accessibility tree. |
+| `CODEYARD_NO_DOCK_ICON` | Do not set the Dock icon at run time (bare binaries only). |
+| `CODEYARD_SKIP_DISK_PROMPT` | Do not show the macOS Full Disk Access dialog at start. |
+| `CODEYARD_DAP_TRACE` | Print the debug adapter protocol traffic to stderr. |
+| `CODEYARD_LSP_TRACE` | Print language server messages to stderr. |
+| `CODEYARD_JS_DEBUG` | Folder of an existing Microsoft js-debug installation. |
+| `CODEYARD_RECONNECT_WINDOW_SECS` | How long the app keeps trying to reconnect after a dropped SSH connection (default 300). |
+
+## For development and tests
+
+| Variable | Effect |
+| --- | --- |
+| `CODEYARD_DEV` | Enable developer commands in a release build (always on in debug builds). |
+| `CODEYARD_MENU_FLAVOR` | `macos`, `windows` or `linux`: draw menus in that platform's style instead of the running one (to review the other platforms' look). |
+| `CODEYARD_DO_DELAY_MS` | Delay before `--do "Command;Command"` runs its commands. |
+| `CODEYARD_DUMP_DOCK` | Print the Dock menu to stderr a few seconds after start; with a number, click that row. |
+| `CODEYARD_DAEMON_GRACE`, `CODEYARD_DAEMON_IDLE` | Seconds the server-side agent daemon waits for a lost client and before exiting with no sessions (defaults 300 and 600). |
+| `CODEYARD_ASKPASS_EXE`, `CODEYARD_ASKPASS_SOCK` | Internal: the executable `ssh` runs as `SSH_ASKPASS` and the socket it answers on. Tests point the first at a test binary. |
+| `CODEYARD_QA_DIR`, `CODEYARD_QA_TMP` | Base folders for test scratch files. |
+| `CODEYARD_QA_SEEDS`, `CODEYARD_QA_SEED_BASE` | Number of random sessions and the first seed of `qa_random_new_commands_many_seeds`. |
+| `CODEYARD_TR_DICT_DIR` | Folder with a Turkish Hunspell dictionary for the manual `cargo test -p spell -- --ignored turkish` check. |

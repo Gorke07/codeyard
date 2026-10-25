@@ -1,0 +1,1820 @@
+# Turkish (tr) UI strings. Format: English<TAB>Turkish. The key is the English text exactly as written in the source.
+# Terms: File Dosya, Edit Düzenle, Selection Seçim, View Görünüm, Go Gezin, Help Yardım, Command Palette Komut Paleti,
+# Source Control Kaynak Denetimi, Explorer Gezgin, Editor Düzenleyici, Workspace Çalışma Alanı, Branch Dal.
+# Git terms (Git, commit, Stash, Pull, Push, Fetch, Rebase) stay as they are.
+# More terms: agent araç, adapter bağdaştırıcı, clipboard pano, scratch taslak, snippet kod parçacığı, passphrase anahtar parolası,
+# Host Sunucu, Port Bağlantı Noktası (the word port stays in compounds: SSH port yönlendirme), Debug Hata Ayıklama, Breakpoint Kesme Noktası.
+
+# ---- Menu bar: menu names ----
+File	Dosya
+Edit	Düzenle
+Selection	Seçim
+View	Görünüm
+Go	Gezin
+Terminal	Terminal
+Window	Pencere
+Help	Yardım
+
+# ---- Menu bar: application menu (macOS) ----
+About codeyard	codeyard Hakkında
+Services	Servisler
+Hide codeyard	codeyard'ı Gizle
+Hide Others	Diğerlerini Gizle
+Show All	Tümünü Göster
+Quit codeyard	codeyard'dan Çık
+Settings…	Ayarlar…
+Open Settings (JSON)	Ayarları Aç (JSON)
+Keyboard Shortcuts	Klavye Kısayolları
+Color Theme…	Renk Teması…
+Import VS Code Settings and Shortcuts	VS Code Ayarlarını ve Kısayollarını İçe Aktar
+Exit	Çıkış
+About Codeyard	Codeyard Hakkında
+
+# ---- Menu bar: File ----
+New File…	Yeni Dosya…
+New Window	Yeni Pencere
+Open Folder…	Klasör Aç…
+Open Recent	Son Açılanlar
+Go to File…	Dosyaya Git…
+Connect to SSH Host…	SSH Sunucusuna Bağlan…
+Save	Kaydet
+Save As…	Farklı Kaydet…
+Save All	Tümünü Kaydet
+Revert File	Dosyayı Geri Döndür
+Reopen Closed Editor	Kapatılan Düzenleyiciyi Yeniden Aç
+Close Editor	Düzenleyiciyi Kapat
+Welcome (no recent folders yet)	Hoş Geldiniz (henüz son klasör yok)
+More…	Diğerleri…
+
+# ---- Menu bar: Edit ----
+Undo	Geri Al
+Redo	Yinele
+Cut	Kes
+Copy	Kopyala
+Paste	Yapıştır
+Find	Bul
+Replace	Değiştir
+Find in Files	Dosyalarda Bul
+Toggle Line Comment	Satır Yorumunu Aç/Kapat
+Format Document	Belgeyi Biçimlendir
+Format Selection	Seçimi Biçimlendir
+Rename Symbol	Sembolü Yeniden Adlandır
+
+# ---- Menu bar: Selection ----
+Select All	Tümünü Seç
+Expand Selection	Seçimi Genişlet
+Shrink Selection	Seçimi Daralt
+Copy Line Up	Satırı Yukarı Kopyala
+Copy Line Down	Satırı Aşağı Kopyala
+Move Line Up	Satırı Yukarı Taşı
+Move Line Down	Satırı Aşağı Taşı
+Add Cursor Above	Üste İmleç Ekle
+Add Cursor Below	Alta İmleç Ekle
+Add Next Occurrence	Sonraki Eşleşmeyi Ekle
+Select All Occurrences	Tüm Eşleşmeleri Seç
+
+# ---- Menu bar: View ----
+Command Palette…	Komut Paleti…
+Explorer	Gezgin
+Search	Arama
+Source Control	Kaynak Denetimi
+Switch Workspace or Connect to Host…	Çalışma Alanı Değiştir veya Sunucuya Bağlan…
+Problems	Sorunlar
+Ports	Bağlantı Noktaları
+Toggle Sidebar	Kenar Çubuğunu Aç/Kapat
+Toggle Panel	Paneli Aç/Kapat
+Split Editor	Düzenleyiciyi Böl
+Word Wrap	Sözcük Kaydırma
+Fold	Katla
+Unfold	Katlamayı Aç
+Fold All	Tümünü Katla
+Unfold All	Tüm Katlamaları Aç
+Zoom In	Büyüt
+Zoom Out	Küçült
+Reset Zoom	Yakınlaştırmayı Sıfırla
+
+# ---- Menu bar: Go ----
+Back	Geri
+Forward	İleri
+Go to Symbol in File…	Dosyada Sembole Git…
+Go to Symbol in Workspace…	Çalışma Alanında Sembole Git…
+Go to Line…	Satıra Git…
+Go to Definition	Tanıma Git
+Go to Type Definition	Tür Tanımına Git
+Go to Implementations	Uygulamalara Git
+Go to References	Başvurulara Git
+Next Problem	Sonraki Sorun
+Previous Problem	Önceki Sorun
+
+# ---- Menu bar: Terminal and Window ----
+New Terminal	Yeni Terminal
+Toggle Terminal	Terminali Aç/Kapat
+Kill Terminal	Terminali Sonlandır
+Minimize	Simge Durumuna Küçült
+Zoom	Yakınlaştır
+Focus Left Editor Group	Soldaki Düzenleyici Grubuna Odaklan
+Focus Right Editor Group	Sağdaki Düzenleyici Grubuna Odaklan
+Welcome	Hoş Geldiniz
+
+# ---- Command palette ----
+recently used	son kullanılan
+Search files by name (> for commands, : for line, # for symbols)	Dosyaları adla ara (komutlar için >, satır için :, semboller için #)
+Type > for commands	Komutlar için > yazın
+Remote: Connect to {}	Uzak: {} Sunucusuna Bağlan
+Remote: Disconnect	Uzak: Bağlantıyı Kes
+Go: File…	Gezin: Dosya…
+Go: Line…	Gezin: Satır…
+Search: Find in Files	Arama: Dosyalarda Bul
+Search: Open Results in Editor	Arama: Sonuçları Düzenleyicide Aç
+File: Follow (Tail) Active File	Dosya: Etkin Dosyayı Takip Et (Tail)
+File: Filter Log Lines…	Dosya: Günlük Satırlarını Süz…
+File: Open Active File as Hex	Dosya: Etkin Dosyayı Hex Olarak Aç
+Search: Find TODO Comments	Arama: TODO Yorumlarını Bul
+View: Switch Editor…	Görünüm: Düzenleyici Değiştir…
+View: Toggle Zen Mode	Görünüm: Zen Modunu Aç/Kapat
+View: Toggle Full Screen	Görünüm: Tam Ekranı Aç/Kapat
+Files: Open Folder…	Dosyalar: Klasör Aç…
+Editor: Save	Düzenleyici: Kaydet
+Editor: Close	Düzenleyici: Kapat
+Editor: Undo	Düzenleyici: Geri Al
+Editor: Redo	Düzenleyici: Yinele
+Editor: Select All	Düzenleyici: Tümünü Seç
+Editor: Find	Düzenleyici: Bul
+Editor: Replace	Düzenleyici: Değiştir
+Editor: Toggle Line Comment	Düzenleyici: Satır Yorumunu Aç/Kapat
+Editor: Move Line Up	Düzenleyici: Satırı Yukarı Taşı
+Editor: Move Line Down	Düzenleyici: Satırı Aşağı Taşı
+Editor: Copy Line Down	Düzenleyici: Satırı Aşağı Kopyala
+Editor: Delete Line	Düzenleyici: Satırı Sil
+View: Zoom In	Görünüm: Büyüt
+View: Zoom Out	Görünüm: Küçült
+View: Reset Zoom	Görünüm: Yakınlaştırmayı Sıfırla
+View: Toggle Word Wrap	Görünüm: Sözcük Kaydırmayı Aç/Kapat
+Editor: Fold	Düzenleyici: Katla
+Editor: Fold Level 1	Düzenleyici: 1. Düzeye Katla
+Editor: Fold Level 2	Düzenleyici: 2. Düzeye Katla
+Editor: Fold Level 3	Düzenleyici: 3. Düzeye Katla
+Editor: Fold Level 4	Düzenleyici: 4. Düzeye Katla
+Editor: Fold Level 5	Düzenleyici: 5. Düzeye Katla
+Editor: Fold Level 6	Düzenleyici: 6. Düzeye Katla
+Editor: Fold Level 7	Düzenleyici: 7. Düzeye Katla
+Editor: Fold Recursively	Düzenleyici: Özyinelemeli Katla
+Editor: Unfold Recursively	Düzenleyici: Özyinelemeli Katlamayı Aç
+Editor: Select All Occurrences of Find Match	Düzenleyici: Bulunan Tüm Eşleşmeleri Seç
+Editor: Expand Selection	Düzenleyici: Seçimi Genişlet
+Editor: Shrink Selection	Düzenleyici: Seçimi Daralt
+Editor: Join Lines	Düzenleyici: Satırları Birleştir
+Editor: Sort Lines Ascending	Düzenleyici: Satırları Artan Sırala
+Editor: Sort Lines Descending	Düzenleyici: Satırları Azalan Sırala
+Editor: Transform to Uppercase	Düzenleyici: Büyük Harfe Dönüştür
+Editor: Transform to Title Case	Düzenleyici: Baş Harfleri Büyüt
+Editor: Duplicate Selection	Düzenleyici: Seçimi Çoğalt
+Editor: Trim Trailing Whitespace	Düzenleyici: Sondaki Boşlukları Temizle
+Git: Stage Change at Cursor	Git: İmlecin Altındaki Değişikliği Stage'e Al
+Editor: Delete All Right	Düzenleyici: İmlecin Sağını Tamamen Sil
+Editor: Select to Bracket	Düzenleyici: Parantezin Eşine Kadar Seç
+Editor: Add Line Comment	Düzenleyici: Satır Yorumu Ekle
+Editor: Remove Line Comment	Düzenleyici: Satır Yorumunu Kaldır
+Editor: Add Selection to Previous Find Match	Düzenleyici: Seçimi Önceki Eşleşmeye Ekle
+Go: Next Change	Gezin: Sonraki Değişiklik
+Editor: Peek Definition	Düzenleyici: Tanıma Göz At
+Editor: Run Code Lens on This Line	Düzenleyici: Bu Satırdaki Code Lens'i Çalıştır
+Editor: Show Incoming Calls	Düzenleyici: Gelen Çağrıları Göster
+Editor: Show Outgoing Calls	Düzenleyici: Giden Çağrıları Göster
+Editor: Show Supertypes	Düzenleyici: Üst Türleri Göster
+Editor: Show Subtypes	Düzenleyici: Alt Türleri Göster
+Go: Previous Change	Gezin: Önceki Değişiklik
+View: Close Saved Editors	Görünüm: Kaydedilmiş Düzenleyicileri Kapat
+Editor: Convert Indentation to Spaces	Düzenleyici: Girintiyi Boşluğa Dönüştür
+Editor: Convert Indentation to Tabs	Düzenleyici: Girintiyi Sekmeye Dönüştür
+View: Toggle Minimap	Görünüm: Mini Haritayı Aç/Kapat
+View: Toggle Sticky Scroll	Görünüm: Yapışkan Kaydırmayı Aç/Kapat
+View: Toggle Render Whitespace	Görünüm: Boşlukları Göstermeyi Aç/Kapat
+Git: Revert Change at Cursor	Git: İmlecin Altındaki Değişikliği Geri Al
+Editor: Transpose Characters	Düzenleyici: Karakterlerin Yerini Değiştir
+Editor: Transform to camelCase	Düzenleyici: camelCase'e Dönüştür
+Editor: Transform to PascalCase	Düzenleyici: PascalCase'e Dönüştür
+Editor: Transform to snake_case	Düzenleyici: snake_case'e Dönüştür
+Editor: Transform to kebab-case	Düzenleyici: kebab-case'e Dönüştür
+Editor: Transform to CONSTANT_CASE	Düzenleyici: CONSTANT_CASE'e Dönüştür
+Editor: Toggle Block Comment	Düzenleyici: Blok Yorumunu Aç/Kapat
+Editor: Base64 Encode	Düzenleyici: Base64 Kodla
+Editor: Base64 Decode	Düzenleyici: Base64 Çöz
+Editor: URL Encode	Düzenleyici: URL Kodla
+Editor: URL Decode	Düzenleyici: URL Çöz
+Editor: HTML Escape	Düzenleyici: HTML Kaçışı Uygula
+Editor: HTML Unescape	Düzenleyici: HTML Kaçışını Kaldır
+Editor: Pick Color…	Düzenleyici: Renk Seç…
+Editor: Sort Lines (Case-Insensitive)	Düzenleyici: Satırları Sırala (Büyük/Küçük Harf Duyarsız)
+Editor: Sort Lines (Natural)	Düzenleyici: Satırları Sırala (Doğal)
+Editor: Remove Blank Lines	Düzenleyici: Boş Satırları Kaldır
+Editor: Collapse Blank Lines	Düzenleyici: Ardışık Boş Satırları Teke İndir
+Editor: Insert Date	Düzenleyici: Tarih Ekle
+Editor: Insert Date and Time (UTC)	Düzenleyici: Tarih ve Saat Ekle (UTC)
+Editor: Insert UUID	Düzenleyici: UUID Ekle
+Editor: Reverse Lines	Düzenleyici: Satırları Ters Çevir
+Editor: Delete Duplicate Lines	Düzenleyici: Yinelenen Satırları Sil
+Editor: Transform to Lowercase	Düzenleyici: Küçük Harfe Dönüştür
+Go: Next Problem	Gezin: Sonraki Sorun
+Go: Previous Problem	Gezin: Önceki Sorun
+Editor: Go to Type Definition	Düzenleyici: Tür Tanımına Git
+Editor: Go to Implementations	Düzenleyici: Uygulamalara Git
+File: Revert File	Dosya: Dosyayı Geri Döndür
+Editor: Unfold	Düzenleyici: Katlamayı Aç
+Editor: Fold All	Düzenleyici: Tümünü Katla
+Editor: Unfold All	Düzenleyici: Tüm Katlamaları Aç
+Editor: Go to Definition	Düzenleyici: Tanıma Git
+Editor: Rename Symbol	Düzenleyici: Sembolü Yeniden Adlandır
+Editor: Find All References	Düzenleyici: Tüm Başvuruları Bul
+Go: Symbol in File…	Gezin: Dosyadaki Sembol…
+Go: Symbol in Workspace…	Gezin: Çalışma Alanındaki Sembol…
+Editor: Quick Fix…	Düzenleyici: Hızlı Düzeltme…
+Editor: Format Document	Düzenleyici: Belgeyi Biçimlendir
+Editor: Format Selection	Düzenleyici: Seçimi Biçimlendir
+File: Save All	Dosya: Tümünü Kaydet
+File: New File…	Dosya: Yeni Dosya…
+File: New Window	Dosya: Yeni Pencere
+File: Open Workspace from File…	Dosya: Çalışma Alanını Dosyadan Aç…
+File: Add Folder in New Window…	Dosya: Klasörü Yeni Pencerede Ekle…
+File: Add Folder to Workspace…	Dosya: Çalışma Alanına Klasör Ekle…
+File: Remove Folder from Workspace…	Dosya: Klasörü Çalışma Alanından Kaldır…
+File: New Folder…	Dosya: Yeni Klasör…
+File: Close Folder	Dosya: Klasörü Kapat
+Projects: Switch Project… (Open Recent)	Projeler: Proje Değiştir… (Son Açılanlar)
+Projects: Add Folder to Projects…	Projeler: Projelere Klasör Ekle…
+Projects: Edit Projects	Projeler: Projeleri Düzenle
+Projects: Remove from Recent…	Projeler: Son Açılanlardan Kaldır…
+Favorites: Toggle Active File	Sık Kullanılanlar: Etkin Dosyayı Ekle/Çıkar
+Favorites: Show Favorites…	Sık Kullanılanlar: Sık Kullanılanları Göster…
+Tasks: Run Task…	Görevler: Görev Çalıştır…
+Tasks: Run Build Task	Görevler: Derleme Görevini Çalıştır
+Tasks: Rerun Last Task	Görevler: Son Görevi Yeniden Çalıştır
+Debug: Start Debugging	Hata Ayıklama: Hata Ayıklamayı Başlat
+Debug: Continue	Hata Ayıklama: Devam Et
+Debug: Pause	Hata Ayıklama: Duraklat
+Debug: Step Over	Hata Ayıklama: Üzerinden Geç
+Debug: Step Into	Hata Ayıklama: İçine Gir
+Debug: Step Out	Hata Ayıklama: Dışına Çık
+Debug: Restart	Hata Ayıklama: Yeniden Başlat
+Debug: Stop	Hata Ayıklama: Durdur
+Debug: Toggle Breakpoint	Hata Ayıklama: Kesme Noktasını Aç/Kapat
+Debug: Edit Breakpoint… (condition, log message, hit count)	Hata Ayıklama: Kesme Noktasını Düzenle… (koşul, günlük iletisi, isabet sayısı)
+Debug: Break on Exceptions…	Hata Ayıklama: İstisnalarda Durdur…
+Debug: Break When Value Changes…	Hata Ayıklama: Değer Değişince Durdur…
+Debug: Remove Data Breakpoints	Hata Ayıklama: Veri Kesme Noktalarını Kaldır
+Debug: Add Watch Expression…	Hata Ayıklama: İzleme İfadesi Ekle…
+Debug: Remove All Watch Expressions	Hata Ayıklama: Tüm İzleme İfadelerini Kaldır
+Debug: Install JavaScript Debugger	Hata Ayıklama: JavaScript Hata Ayıklayıcısını Kur
+Debug: Remove All Breakpoints	Hata Ayıklama: Tüm Kesme Noktalarını Kaldır
+Debug: Show Debug Panel	Hata Ayıklama: Hata Ayıklama Panelini Göster
+Test: Run Test at Cursor	Test: İmlecin Altındaki Testi Çalıştır
+Test: Run Tests in File	Test: Dosyadaki Testleri Çalıştır
+Tasks: Configure Tasks	Görevler: Görevleri Yapılandır
+Merge Conflict: Open Merge Editor	Birleştirme Çakışması: Birleştirme Düzenleyicisini Aç
+GitHub: Pull Requests…	GitHub: Pull Request'ler…
+HTTP: Send Request	HTTP: İstek Gönder
+HTTP: Show Last Response Headers	HTTP: Son Yanıtın Üstbilgilerini Göster
+Merge Conflict: Accept Current	Birleştirme Çakışması: Geçerli Olanı Kabul Et
+Merge Conflict: Accept Incoming	Birleştirme Çakışması: Gelen Olanı Kabul Et
+Merge Conflict: Accept Both	Birleştirme Çakışması: İkisini de Kabul Et
+Merge Conflict: Accept All Current	Birleştirme Çakışması: Tüm Geçerlileri Kabul Et
+Merge Conflict: Accept All Incoming	Birleştirme Çakışması: Tüm Gelenleri Kabul Et
+Merge Conflict: Next Conflict	Birleştirme Çakışması: Sonraki Çakışma
+Merge Conflict: Previous Conflict	Birleştirme Çakışması: Önceki Çakışma
+Bookmarks: Toggle	Yer İşaretleri: Ekle/Kaldır
+Bookmarks: Jump to Next	Yer İşaretleri: Sonrakine Atla
+Bookmarks: Jump to Previous	Yer İşaretleri: Öncekine Atla
+Bookmarks: List…	Yer İşaretleri: Listele…
+Bookmarks: Clear in File	Yer İşaretleri: Dosyadakileri Temizle
+Preferences: Open Workspace Settings	Tercihler: Çalışma Alanı Ayarlarını Aç
+File: Refresh Explorer	Dosya: Gezgini Yenile
+File: Copy Path of Active File	Dosya: Etkin Dosyanın Yolunu Kopyala
+File: Copy Relative Path of Active File	Dosya: Etkin Dosyanın Göreli Yolunu Kopyala
+File: Compare Active File With…	Dosya: Etkin Dosyayı Şununla Karşılaştır…
+View: Close All Editors	Görünüm: Tüm Düzenleyicileri Kapat
+View: Close Other Editors	Görünüm: Diğer Düzenleyicileri Kapat
+View: Open Next Editor	Görünüm: Sonraki Düzenleyiciyi Aç
+View: Open Previous Editor	Görünüm: Önceki Düzenleyiciyi Aç
+View: Keep Editor	Görünüm: Düzenleyiciyi Açık Tut
+Terminal: Clear	Terminal: Temizle
+File: Reveal Active File in Explorer	Dosya: Etkin Dosyayı Gezgin'de Göster
+Editor: Change End of Line Sequence	Düzenleyici: Satır Sonu Dizisini Değiştir
+Editor: Change Language Mode	Düzenleyici: Dil Modunu Değiştir
+File: Open Active File With…	Dosya: Etkin Dosyayı Şununla Aç…
+Editor: Change Indentation	Düzenleyici: Girintiyi Değiştir
+Files: Collapse Folders in Explorer	Dosyalar: Gezgin'deki Klasörleri Daralt
+File: Save As…	Dosya: Farklı Kaydet…
+File: Save a Copy to This Computer…	Dosya: Bu Bilgisayara Kopya Kaydet…
+View: Reopen Closed Editor	Görünüm: Kapatılan Düzenleyiciyi Yeniden Aç
+Go: Back	Gezin: Geri
+Go: Forward	Gezin: İleri
+Editor: Trigger Suggest	Düzenleyici: Önerileri Göster
+Editor: Show Hover	Düzenleyici: Üzerine Gelme Bilgisini Göster
+Editor: Add Cursor Above	Düzenleyici: Üste İmleç Ekle
+Editor: Add Cursor Below	Düzenleyici: Alta İmleç Ekle
+Editor: Add Next Occurrence to Selection	Düzenleyici: Sonraki Eşleşmeyi Seçime Ekle
+Workspace: Trust This Folder	Çalışma Alanı: Bu Klasöre Güven
+View: Toggle Sidebar	Görünüm: Kenar Çubuğunu Aç/Kapat
+View: Files	Görünüm: Dosyalar
+Remote: Connect to Host or Switch Workspace…	Uzak: Sunucuya Bağlan veya Çalışma Alanı Değiştir…
+Theme: Pick Color Theme…	Tema: Renk Teması Seç…
+Theme: Pick File Icon Theme…	Tema: Dosya Simgesi Teması Seç…
+Remote: Add SSH Host…	Uzak: SSH Sunucusu Ekle…
+Remote: Remove SSH Host…	Uzak: SSH Sunucusunu Kaldır…
+Remote: Test SSH Connection…	Uzak: SSH Bağlantısını Sına…
+Remote: Edit SSH Config	Uzak: SSH Yapılandırmasını Düzenle
+Remote: Manage SSH Hosts…	Uzak: SSH Sunucularını Yönet…
+Remote: Edit SSH Host…	Uzak: SSH Sunucusunu Düzenle…
+Remote: Set Up Key Login…	Uzak: Anahtarla Girişi Kur…
+Schemas: Clear Download Cache	Şemalar: İndirme Önbelleğini Temizle
+Spelling: Fix Word at Cursor…	Yazım Denetimi: İmlecin Altındaki Sözcüğü Düzelt…
+Spelling: Install Dictionary…	Yazım Denetimi: Sözlük Kur…
+Spelling: Toggle Spell Check	Yazım Denetimi: Yazım Denetimini Aç/Kapat
+Remote: Upload Files to This Folder…	Uzak: Dosyaları Bu Klasöre Yükle…
+Remote: Download Active File…	Uzak: Etkin Dosyayı İndir…
+Help: About Codeyard	Yardım: Codeyard Hakkında
+Help: Grant Full Disk Access…	Yardım: Tam Disk Erişimi Ver…
+Theme: Save Current Colors as User Theme…	Tema: Geçerli Renkleri Kullanıcı Teması Olarak Kaydet…
+Theme: Open User Themes Folder	Tema: Kullanıcı Temaları Klasörünü Aç
+Preferences: Settings	Tercihler: Ayarlar
+Preferences: Keyboard Shortcuts	Tercihler: Klavye Kısayolları
+Preferences: Open Settings	Tercihler: Ayarları Aç
+Preferences: Open Settings (JSON)	Tercihler: Ayarları Aç (JSON)
+Help: Welcome	Yardım: Hoş Geldiniz
+JSON: Minify Document	JSON: Belgeyi Küçült
+Help: Keyboard Shortcuts Reference	Yardım: Klavye Kısayolları Başvurusu
+Snippets: Insert Snippet…	Kod Parçacıkları: Kod Parçacığı Ekle…
+Preferences: Configure User Snippets	Tercihler: Kullanıcı Kod Parçacıklarını Yapılandır
+Markdown: Open Preview	Markdown: Önizlemeyi Aç
+File: Compare Active File with Clipboard	Dosya: Etkin Dosyayı Panoyla Karşılaştır
+File: Compare Active File with Saved	Dosya: Etkin Dosyayı Kaydedilmiş Sürümle Karşılaştır
+File: New Scratch File…	Dosya: Yeni Taslak Dosya…
+Terminal: Run Selected Text	Terminal: Seçili Metni Çalıştır
+Go: Last Edit Location	Gezin: Son Düzenleme Konumu
+Git: Clone Repository…	Git: Depoyu Klonla…
+Preferences: Open Keyboard Shortcuts	Tercihler: Klavye Kısayollarını Aç
+Preferences: Import VS Code Settings and Shortcuts	Tercihler: VS Code Ayarlarını ve Kısayollarını İçe Aktar
+View: Problems	Görünüm: Sorunlar
+View: Output	Görünüm: Çıktı
+Output: Clear	Çıktı: Temizle
+View: Ports (SSH port forwarding)	Görünüm: Bağlantı Noktaları (SSH port yönlendirme)
+View: Split Editor	Görünüm: Düzenleyiciyi Böl
+View: Move Editor into Other Group	Görünüm: Düzenleyiciyi Diğer Gruba Taşı
+View: Focus Left Editor Group	Görünüm: Soldaki Düzenleyici Grubuna Odaklan
+View: Focus Right Editor Group	Görünüm: Sağdaki Düzenleyici Grubuna Odaklan
+View: Source Control	Görünüm: Kaynak Denetimi
+Git: Checkout to…	Git: Checkout…
+Git: Create Branch…	Git: Dal Oluştur…
+Remote: Connect to Dev Container…	Uzak: Geliştirme Kapsayıcısına Bağlan…
+Remote: Connect to WSL Distro…	Uzak: WSL Dağıtımına Bağlan…
+Git: Merge Branch…	Git: Dalı Birleştir…
+Git: Rebase Branch…	Git: Dalı Rebase Et…
+Git: Continue Rebase	Git: Rebase'e Devam Et
+Git: Abort Rebase	Git: Rebase'i İptal Et
+Git: Add Worktree…	Git: Çalışma Ağacı Ekle…
+Git: Open Worktree…	Git: Çalışma Ağacını Aç…
+Git: Delete Branch…	Git: Dalı Sil…
+Git: Rename Branch…	Git: Dalı Yeniden Adlandır…
+Git: Publish Branch	Git: Dalı Yayımla
+Git: Abort Merge	Git: Birleştirmeyi İptal Et
+Git: Add Remote…	Git: Uzak Depo Ekle…
+Git: Remove Remote…	Git: Uzak Depoyu Kaldır…
+Git: Create Tag…	Git: Etiket Oluştur…
+Git: Pull	Git: Pull
+Git: Push	Git: Push
+Git: Fetch	Git: Fetch
+Git: Sync	Git: Eşitle
+Developer: Restart Language Servers	Geliştirici: Dil Sunucularını Yeniden Başlat
+Git: View File History	Git: Dosya Geçmişini Göster
+Git: Blame Line	Git: Satırın Blame Bilgisini Göster
+Git: Commit (Amend)	Git: Commit (Amend)
+Git: Undo Last Commit	Git: Son Commit'i Geri Al
+Git: Discard All Changes	Git: Tüm Değişiklikleri At
+Git: Stash	Git: Stash
+Git: Stash (Include Untracked)	Git: Stash (İzlenmeyenler Dahil)
+Git: Pop Latest Stash	Git: Son Stash'i Pop Et
+Git: Pop Stash…	Git: Stash Pop Et…
+Git: Apply Stash…	Git: Stash Uygula…
+Git: Drop Stash…	Git: Stash Sil…
+Terminal: New	Terminal: Yeni
+Terminal: Toggle	Terminal: Aç/Kapat
+Terminal: Close	Terminal: Kapat
+Terminal: Split	Terminal: Böl
+View: Toggle Panel	Görünüm: Paneli Aç/Kapat
+View: Move Panel (bottom ⇄ right)	Görünüm: Paneli Taşı (alt ⇄ sağ)
+View: Toggle Maximized Panel	Görünüm: Panelin Ekranı Kaplamasını Aç/Kapat
+
+# ---- Welcome screen ----
+New File	Yeni Dosya
+Clone Repository…	Depoyu Klonla…
+Connect over SSH	SSH ile Bağlan
+Recent	Son Açılanlar
+Customize	Özelleştir
+Learn	Öğren
+Settings	Ayarlar
+Color Theme	Renk Teması
+File Icon Theme	Dosya Simgesi Teması
+Command palette	Komut paleti
+Go to file	Dosyaya git
+Find in files	Dosyalarda bul
+Source control	Kaynak denetimi
+Unpin	Sabitlemeyi kaldır
+Pin to the top	En üste sabitle
+Remove from Recent	Son açılanlardan kaldır
+Nothing yet: open a folder to see it here.	Henüz yok: burada görmek için bir klasör açın.
+⌘P jumps to any file; type # to search symbols, : to go to a line.	⌘P herhangi bir dosyaya atlar; sembol aramak için #, satıra gitmek için : yazın.
+⇧⌘P opens the command palette: every feature has an entry there.	⇧⌘P komut paletini açar: her özelliğin orada bir karşılığı vardır.
+Select a word and press ⌘D to add the next match as another cursor.	Bir sözcüğü seçip ⌘D'ye basın: sonraki eşleşme ayrı bir imleç olarak eklenir.
+⌥↑ / ⌥↓ move the current line; ⇧⌥↑ / ⇧⌥↓ copy it up or down.	⌥↑ / ⌥↓ geçerli satırı taşır; ⇧⌥↑ / ⇧⌥↓ yukarı ya da aşağı kopyalar.
+F4 steps through the search results, ⇧F4 goes back.	F4 arama sonuçlarında ilerler, ⇧F4 geri döner.
+Right-click a commit in the Source Control graph to branch, tag, cherry-pick, revert or reset.	Kaynak Denetimi grafiğinde bir commit'e sağ tıklayarak dal açabilir, etiketleyebilir, cherry-pick, revert ya da reset yapabilirsiniz.
+The Timeline section of the explorer lists the commits of the open file; click one to see its diff.	Gezgin'deki Zaman Çizelgesi bölümü açık dosyanın commit'lerini listeler; farkını görmek için birine tıklayın.
+Drag the edge of a sidebar section to resize it; click its title to fold it.	Boyutunu değiştirmek için kenar çubuğu bölümünün kenarını sürükleyin; katlamak için başlığına tıklayın.
+⌘K Z toggles Zen mode; ⌘E switches between open editors.	⌘K Z Zen modunu açıp kapatır; ⌘E açık düzenleyiciler arasında geçiş yapar.
+Connect over SSH and the files, terminal and language servers all run on the server.	SSH ile bağlandığınızda dosyalar, terminal ve dil sunucularının hepsi sunucuda çalışır.
+⌘K ⌘T previews color themes as you move through the list.	⌘K ⌘T listede gezindikçe renk temalarını önizler.
+In the file tree, type to jump to a name; ⇧→ opens everything inside a folder, ⇧← closes it.	Dosya ağacında bir ada atlamak için yazın; ⇧→ klasörün içindeki her şeyi açar, ⇧← kapatır.
+⌘. offers quick fixes when a language server is running.	Bir dil sunucusu çalışırken ⌘. hızlı düzeltmeler sunar.
+Right-click a folder and choose Find in Folder… to search only inside it.	Yalnızca bir klasörün içinde aramak için ona sağ tıklayıp Klasörde Bul… seçeneğini kullanın.
+
+# ---- Status bar ----
+Local	Yerel
+uploading agent	aracı yükleniyor
+starting	başlatılıyor
+Connecting to {}…	{} sunucusuna bağlanılıyor…
+Reconnecting to {}… (attempt {})	{0} sunucusuna yeniden bağlanılıyor… (deneme {1})
+{}: connection failed	{}: bağlantı başarısız
+Ln {}, Col {} ({} selected)	Sat {0}, Süt {1} ({2} seçili)
+Ln {}, Col {}	Sat {0}, Süt {1}
+The connection dropped; trying to reconnect. Unsaved changes are kept.	Bağlantı koptu; yeniden bağlanılıyor. Kaydedilmemiş değişiklikler korunur.
+Problems (⇧⌘M)	Sorunlar (⇧⌘M)
+{} forwarded	{} yönlendirildi
+File transfer in progress. Click to cancel.	Dosya aktarımı sürüyor. İptal etmek için tıklayın.
+Go to the next merge conflict	Sonraki birleştirme çakışmasına git
+Saving…	Kaydediliyor…
+● Unsaved	● Kaydedilmedi
+Go to Line/Column (⌃G)	Satıra/Sütuna Git (⌃G)
+Select Language Mode	Dil Modunu Seç
+
+# ---- Git confirmations ----
+Cancel	İptal
+Delete	Sil
+Discard	Değişiklikleri At
+Reset	Sıfırla
+Merge	Birleştir
+Rebase	Rebase
+Remove	Kaldır
+Abort Merge	Birleştirmeyi İptal Et
+Abort Rebase	Rebase'i İptal Et
+Merge {} into {}?	{0}, {1} dalına birleştirilsin mi?
+A merge commit is created unless it can fast-forward. Conflicts are resolved in Source Control.	İleri sarma mümkün değilse bir birleştirme commit'i oluşturulur. Çakışmalar Kaynak Denetimi'nde çözülür.
+Rebase {} onto {}?	{0}, {1} üzerine rebase edilsin mi?
+Your commits on this branch are rewritten on top of it (their hashes change). Conflicts stop the rebase; resolve them and use Git: Continue Rebase, or Git: Abort Rebase.	Bu daldaki commit'leriniz onun üzerine yeniden yazılır (özetleri değişir). Çakışmalar rebase'i durdurur; çözüp Git: Rebase'e Devam Et ya da Git: Rebase'i İptal Et komutunu kullanın.
+Delete branch {}?	{} dalı silinsin mi?
+The branch is fully merged into the current branch.	Dal, geçerli dalla tamamen birleştirilmiş.
+{0} commit{1} only exist on this branch and will be lost (the reflog keeps them for a while).	{0} commit yalnızca bu dalda var ve kaybolacak (reflog onları bir süre saklar).
+Could not tell whether it is merged ({}): git will refuse if commits would be lost.	Birleştirilip birleştirilmediği anlaşılamadı ({}): commit kaybolacaksa git silmeyi reddeder.
+Remove remote {}?	{} uzak deposu kaldırılsın mı?
+Only the connection is removed; the remote repository itself is untouched.	Yalnızca bağlantı kaldırılır; uzak depoya dokunulmaz.
+Abort the merge?	Birleştirme iptal edilsin mi?
+Everything resolved so far in this merge is discarded.	Bu birleştirmede şimdiye kadar çözülen her şey atılır.
+Abort the rebase?	Rebase iptal edilsin mi?
+The branch goes back to how it was before the rebase started.	Dal, rebase başlamadan önceki hâline döner.
+Discard changes in {}?	{} içindeki değişiklikler atılsın mı?
+Discard changes in {} files?	{} dosyadaki değişiklikler atılsın mı?
+Untracked files will be deleted. This can't be undone.	İzlenmeyen dosyalar silinecek. Bu işlem geri alınamaz.
+This can't be undone.	Bu işlem geri alınamaz.
+Hard reset to {}?	{} noktasına hard reset yapılsın mı?
+Commits after it leave this branch and every uncommitted change is lost. This can't be undone.	Ondan sonraki commit'ler bu daldan çıkar ve commit edilmemiş her değişiklik kaybolur. Bu işlem geri alınamaz.
+App: Quit	Uygulama: Çık
+
+# ---- Source Control panel: rows, buttons, messages ----
+Unstage	Stage'den Çıkar
+Stage	Stage'e Al
+Unstage all	Tümünü Stage'den Çıkar
+Stage all	Tümünü Stage'e Al
+Mark as resolved (stage)	Çözüldü olarak işaretle (stage)
+Mark all as resolved (stage)	Tümünü çözüldü olarak işaretle (stage)
+Discard changes	Değişiklikleri at
+Discard all changes	Tüm değişiklikleri at
+Refresh	Yenile
+More Actions…	Diğer Eylemler…
+This folder is not a git repository.	Bu klasör bir git deposu değil.
+detached HEAD	ayrık HEAD
+Commits as {0} <{1}>	Commit'ler {0} <{1}> adıyla yapılır
+Git identity is not set on this host: commits will be refused. Set user.name and user.email (git config --global …).	Bu sunucuda git kimliği ayarlı değil: commit'ler reddedilecek. user.name ve user.email değerlerini ayarlayın (git config --global …).
+Message (↵ to commit)	İleti (commit için ↵)
+Merge Changes	Birleştirme Değişiklikleri
+Staged Changes	Stage'deki Değişiklikler
+Changes	Değişiklikler
+No changes.	Değişiklik yok.
+Commit	Commit Et
+Commit ({})	Commit Et ({})
+Commit All ({})	Tümünü Commit Et ({})
+Stashes	Stash'ler
+Apply (keep the stash)	Uygula (stash saklanır)
+Pop (apply and drop)	Pop Et (uygula ve sil)
+Drop	Sil
+Commit {}	Commit: {}
+Close details	Ayrıntıları kapat
+Copy the full hash	Tam özeti kopyala
+Loading…	Yükleniyor…
+Could not read the commit: {}	Commit okunamadı: {}
+{} still has merge conflict markers. Resolve them (Accept Current / Incoming / Both) and save first.	{} içinde hâlâ birleştirme çakışma işaretleri var. Önce bunları çözün (Geçerli / Gelen / İkisini de Kabul Et) ve kaydedin.
+No changes to discard	Atılacak değişiklik yok
+Amended {}	Düzeltildi: {}
+Undid commit “{}”	Commit geri alındı: “{}”
+Stashed changes	Değişiklikler stash'lendi
+Popped {}	{} pop edildi
+Applied {}	{} uygulandı
+Dropped {}	{} silindi
+Type a commit message first	Önce bir commit iletisi yazın
+Nothing to commit	Commit edilecek bir şey yok
+Committed {}	Commit edildi: {}
+New (untracked)	Yeni (izlenmiyor)
+Renamed	Yeniden adlandırıldı
+Added	Eklendi
+Modified	Değiştirildi
+Deleted	Silindi
+Conflict	Çakışma
+now	şimdi
+{}s	{}sn
+{}m	{}dk
+{}h	{}sa
+{}d	{}g
+{}w	{}hf
+{}mo	{}ay
+{}y	{}yıl
+
+# ---- Source Control panel: graph, commit card, timeline dates ----
+Graph	Grafik
+List	Liste
+Days	Günler
+Search commits (message, author, hash)	Commit ara (ileti, yazar, özet)
+Search commits	Commit ara
+Reload history	Geçmişi yeniden yükle
+Showing all branches (click: current branch only)	Tüm dallar gösteriliyor (tıkla: yalnızca geçerli dal)
+Showing the current branch (click: all branches)	Geçerli dal gösteriliyor (tıkla: tüm dallar)
+Branch lanes, two lines per commit	Dal şeritleri, commit başına iki satır
+One line per commit: the most history in a narrow sidebar	Commit başına bir satır: dar kenar çubuğunda en çok geçmiş
+Commits grouped by day	Commit'ler güne göre gruplanır
+Mine	Benim
+Only your own commits (by your git name or e-mail)	Yalnızca kendi commit'leriniz (git adınıza ya da e-postanıza göre)
+No merges	Birleştirmesiz
+Hide merge commits	Birleştirme commit'lerini gizle
+No commits yet.	Henüz commit yok.
+No commit matches.	Eşleşen commit yok.
+None of these commits is yours.	Bu commit'lerin hiçbiri sizin değil.
+No commits to show.	Gösterilecek commit yok.
+Could not read the history: {}	Geçmiş okunamadı: {}
+Click: details · Double-click: open · Right-click: actions	Tıkla: ayrıntılar · Çift tıkla: aç · Sağ tıkla: eylemler
+{0}, {1} {2} {3}	{1} {2} {3} {0}
+Jan	Ocak
+Feb	Şubat
+Mar	Mart
+Apr	Nisan
+May	Mayıs
+Jun	Haziran
+Jul	Temmuz
+Aug	Ağustos
+Sep	Eylül
+Oct	Ekim
+Nov	Kasım
+Dec	Aralık
+Monday	Pazartesi
+Tuesday	Salı
+Wednesday	Çarşamba
+Thursday	Perşembe
+Friday	Cuma
+Saturday	Cumartesi
+Sunday	Pazar
+
+# ---- Source Control: "…" menu, commit context menu and results of commit actions ----
+Checkout to…	Checkout…
+Create Branch…	Dal Oluştur…
+Commit (Amend)	Commit'i Düzelt (Amend)
+Undo Last Commit	Son Commit'i Geri Al
+Stash (Include Untracked)	Stash (İzlenmeyenler Dahil)
+Pop Latest Stash	Son Stash'i Pop Et
+Pop Stash…	Stash Pop Et…
+Apply Stash…	Stash Uygula…
+Drop Stash…	Stash Sil…
+Discard All Changes	Tüm Değişiklikleri At
+Copy Commit Hash	Commit Özetini Kopyala
+Copy Message	İletiyi Kopyala
+Show Changed Files…	Değişen Dosyaları Göster…
+Create Branch Here…	Burada Dal Oluştur…
+Create Tag Here…	Burada Etiket Oluştur…
+Checkout (Detached)	Checkout (Ayrık HEAD)
+Cherry-pick	Cherry-pick Yap
+Revert	Revert Et
+Reset Soft to Here	Buraya Soft Reset
+Reset Mixed to Here	Buraya Mixed Reset
+Reset Hard to Here…	Buraya Hard Reset…
+Checked out {} (detached HEAD)	{} checkout edildi (ayrık HEAD)
+Created branch {0} at {1}	{1} noktasında {0} dalı oluşturuldu
+Tagged {0} as {1}	{0} için {1} etiketi oluşturuldu
+Cherry-picked {}	{} cherry-pick edildi
+Cherry-pick stopped and was undone: {}	Cherry-pick durdu ve geri alındı: {}
+Reverted {}	{} revert edildi
+Revert stopped and was undone: {}	Revert durdu ve geri alındı: {}
+Reset to {0} ({1})	{0} noktasına reset yapıldı ({1})
+
+# ---- Git branch, checkout, tag, stash and remote flows: prompts, pickers and results ----
+Create branch	Dal oluştur
+Name of the new branch (from the current one)	Yeni dalın adı (geçerli daldan)
+Name of the new branch (starts at this commit)	Yeni dalın adı (bu commit'ten başlar)
+Rename branch	Dalı yeniden adlandır
+New branch name	Yeni dal adı
+Create tag	Etiket oluştur
+Name of the tag	Etiketin adı
+Name of the tag (at HEAD)	Etiketin adı (HEAD'de)
+Add worktree	Çalışma ağacı ekle
+path branch (new branch is created if it does not exist)	yol dal (dal yoksa yeni dal oluşturulur)
+Add remote	Uzak depo ekle
+name url (e.g. origin https://host/repo.git)	ad url (ör. origin https://host/repo.git)
++ Create new branch…	+ Yeni dal oluştur…
+current	geçerli
+remote	uzak
+Select a branch to check out	Checkout edilecek dalı seçin
+Merge into {}	{} dalına birleştir
+Rebase {} onto…	{} dalını şunun üzerine rebase et…
+Open which worktree?	Hangi çalışma ağacı açılsın?
+Delete which branch?	Hangi dal silinsin?
+Rename which branch?	Hangi dal yeniden adlandırılsın?
+Remove which remote?	Hangi uzak depo kaldırılsın?
+Nothing to choose from.	Seçilecek bir şey yok.
+Pick a stash to pop	Pop edilecek stash'i seçin
+Pick a stash to apply	Uygulanacak stash'i seçin
+Pick a stash to drop	Silinecek stash'i seçin
+There are no stashes.	Stash yok.
+Open a file first.	Önce bir dosya açın.
+This file is not in the repository.	Bu dosya depoda değil.
+History of {}	{} geçmişi
+{} has no commits yet.	{} için henüz commit yok.
+{} changed no files (merge or empty commit).	{} hiçbir dosyayı değiştirmedi (birleştirme ya da boş commit).
+Could not list stashes: {}	Stash'ler listelenemedi: {}
+Could not list branches: {}	Dallar listelenemedi: {}
+Could not list: {}	Listelenemedi: {}
+Switched to {}	{} dalına geçildi
+Could not switch to {0}: {1}	{0} dalına geçilemedi: {1}
+Renaming {}…	{} yeniden adlandırılıyor…
+Renamed {0} to {1}	{0}, {1} olarak yeniden adlandırıldı
+Adding worktree…	Çalışma ağacı ekleniyor…
+Added worktree {}: open it with Git: Open Worktree…	{} çalışma ağacı eklendi: Git: Çalışma Ağacını Aç… ile açın
+Enter: path branch	Şunu girin: yol dal
+Adding remote…	Uzak depo ekleniyor…
+Added remote {}	{} uzak deposu eklendi
+Enter the remote as: name url	Uzak depoyu şöyle girin: ad url
+Merging {}…	{} birleştiriliyor…
+Merged {}	{} birleştirildi
+Merge of {} has conflicts: resolve them in Source Control (or Git: Abort Merge)	{} birleştirmesinde çakışma var: Kaynak Denetimi'nde çözün (ya da Git: Birleştirmeyi İptal Et)
+Aborting merge…	Birleştirme iptal ediliyor…
+Merge aborted	Birleştirme iptal edildi
+Rebasing onto {}…	{} üzerine rebase ediliyor…
+Rebased onto {}	{} üzerine rebase edildi
+Rebase stopped on conflicts: resolve them, then Git: Continue Rebase (or Abort Rebase)	Rebase çakışmalarda durdu: çözün, sonra Git: Rebase'e Devam Et (ya da Rebase'i İptal Et)
+Continuing rebase…	Rebase sürdürülüyor…
+Rebase finished	Rebase tamamlandı
+Rebase stopped again on conflicts: resolve and stage them, then Git: Continue Rebase	Rebase yine çakışmalarda durdu: çözüp stage'e alın, sonra Git: Rebase'e Devam Et
+Aborting rebase…	Rebase iptal ediliyor…
+Rebase aborted	Rebase iptal edildi
+Deleting {}…	{} siliniyor…
+Deleted {}	{} silindi
+Removing {}…	{} kaldırılıyor…
+Removed remote {}	{} uzak deposu kaldırıldı
+Publishing branch…	Dal yayımlanıyor…
+Published to {}	{} konumuna yayımlandı
+
+# ---- Explorer: panel, sections, empty states, activity bar ----
+Explorer (⇧⌘E)	Gezgin (⇧⌘E)
+Search (⇧⌘F)	Arama (⇧⌘F)
+Source Control (⌃⇧G)	Kaynak Denetimi (⌃⇧G)
+Manage: About, Settings, Color Theme…	Yönet: Hakkında, Ayarlar, Renk Teması…
+File Icon Theme…	Dosya Simgesi Teması…
+No folder is open.	Açık klasör yok.
+Open Folder	Klasör Aç
+Open recent, or connect to a host… (⌃R)	Son açılanı aç ya da bir sunucuya bağlan… (⌃R)
+New File… (⌘N)	Yeni Dosya… (⌘N)
+Refresh Explorer	Gezgini Yenile
+Expand Folders (the selected one, or the open file's folders)	Klasörleri Genişlet (seçili olanı ya da açık dosyanın klasörlerini)
+Collapse Folders	Klasörleri Daralt
+Open Editors ({})	Açık Düzenleyiciler ({})
+★ Favorites	★ Sık Kullanılanlar
+Outline	Anahat
+Timeline	Zaman Çizelgesi
+Empty folder	Klasör boş
+Open a file to see its history.	Geçmişini görmek için bir dosya açın.
+Saved · {}	Kaydedildi · {}
+Compare this saved copy with the editor	Bu kayıtlı kopyayı düzenleyiciyle karşılaştır
+No saved copies yet. Save the file to start its local history.	Henüz kayıtlı kopya yok. Yerel geçmişi başlatmak için dosyayı kaydedin.
+This file has no commits or saved copies yet.	Bu dosyanın henüz commit'i ya da kayıtlı kopyası yok.
+Open a file to see its structure.	Yapısını görmek için bir dosya açın.
+The file is too large for an outline.	Dosya anahat için çok büyük.
+No outline for this file type.	Bu dosya türü için anahat yok.
+No symbols found.	Sembol bulunamadı.
+
+# ---- Explorer: file/folder context menu and tab context menu ----
+New Folder…	Yeni Klasör…
+Rename…	Yeniden Adlandır…
+Duplicate	Çoğalt
+Expand All Inside	İçindekilerin Tümünü Genişlet
+Collapse All Inside	İçindekilerin Tümünü Daralt
+Find in Folder…	Klasörde Bul…
+Open to the Side	Yana Aç
+Follow (Tail)	Takip Et (Tail)
+Compare with Selected	Seçiliyle Karşılaştır
+Select for Compare	Karşılaştırmak İçin Seç
+Download…	İndir…
+Upload Files Here…	Dosyaları Buraya Yükle…
+Open in Integrated Terminal	Tümleşik Terminalde Aç
+Copy Path	Yolu Kopyala
+Copy Relative Path	Göreli Yolu Kopyala
+Remove from Favorites	Sık Kullanılanlardan Kaldır
+Add to Favorites	Sık Kullanılanlara Ekle
+Reveal in Finder	Finder'da Göster
+Close	Kapat
+Close Others	Diğerlerini Kapat
+Close to the Right	Sağdakileri Kapat
+Close Saved	Kaydedilenleri Kapat
+Pin	Sabitle
+Selected {} for compare. Right-click another file and choose Compare.	Karşılaştırma için {} seçildi. Başka bir dosyaya sağ tıklayıp Seçiliyle Karşılaştır'ı seçin.
+Copied {}	Kopyalandı: {}
+preview	önizleme
+read-only	salt okunur
+{} (diff)	{} (fark)
+
+# ---- Settings page and Keyboard Shortcuts page ----
+Commonly Used	Yaygın Kullanılanlar
+Editor	Düzenleyici
+Workbench	Çalışma Ekranı
+Files	Dosyalar
+Remote & Languages	Uzak ve Diller
+Auto (follow system)	Otomatik (sistemi izle)
+Back to the default (removes the value from settings.jsonc)	Varsayılana dön (değeri settings.jsonc dosyasından kaldırır)
+Search settings	Ayarlarda ara
+default	varsayılan
+Open settings.jsonc	settings.jsonc'yi Aç
+File icon theme…	Dosya simgesi teması…
+Nothing changed: every setting has its default value.	Hiçbir şey değişmedi: her ayar varsayılan değerinde.
+No setting matches.	Eşleşen ayar yok.
+Search commands or keys (e.g. “comment”, “⌘D”)	Komut ya da tuş ara (ör. “comment”, “⌘D”)
+
+# ---- Saving, save conflicts and unsaved changes ----
+The file changed on disk while you were editing. Nothing was saved.	Siz düzenlerken dosya diskte değişti. Hiçbir şey kaydedilmedi.
+Overwrite	Üzerine Yaz
+Discard mine, load from disk	Benimkini at, diskten yükle
+This file was deleted on disk. Saving will create it again.	Bu dosya diskte silindi. Kaydetmek onu yeniden oluşturur.
+Try again	Yeniden dene
+Could not save: {}	Kaydedilemedi: {}
+Could not load: {}	Yüklenemedi: {}
+Not saved: {0} (U+{1}) cannot be written in {2}. Remove it, or save a copy as UTF-8.	Kaydedilmedi: {0} (U+{1}) {2} kodlamasıyla yazılamıyor. Karakteri kaldırın ya da kopyayı UTF-8 olarak kaydedin.
+Not saved: {0} cannot be written in {1}.	Kaydedilmedi: {0}, {1} kodlamasıyla yazılamıyor.
+Do you want to save the changes you made to {}?	{} dosyasında yaptığınız değişiklikler kaydedilsin mi?
+Your changes will be lost if you don't save them.	Kaydetmezseniz değişiklikleriniz kaybolur.
+Don't Save	Kaydetme
+You have unsaved changes	Kaydedilmemiş değişiklikleriniz var
+Quitting loses everything since the last save.	Çıkmak, son kayıttan beri yapılan her şeyi kaybettirir.
+Quit without saving	Kaydetmeden çık
+Closing the window loses everything since the last save.	Pencereyi kapatmak, son kayıttan beri yapılan her şeyi kaybettirir.
+Close without saving	Kaydetmeden kapat
+
+# ---- File operations: create, rename, delete, move, paste, save as; shared input rows ----
+Create folder	Klasör oluştur
+Name of the new folder	Yeni klasörün adı
+Create file	Dosya oluştur
+Name of the new file	Yeni dosyanın adı
+Rename to	Yeniden adlandır
+New name	Yeni ad
+File name (a path like src/new.rs works too)	Dosya adı (src/new.rs gibi bir yol da olur)
+Save as	Farklı kaydet
+Path (relative to the folder, or absolute)	Yol (klasöre göreli ya da mutlak)
+Save copy	Kopya kaydet
+Path on this computer (~ is your home folder)	Bu bilgisayardaki yol (~ ev klasörünüzdür)
+This file is already on this computer. Use Save As instead.	Bu dosya zaten bu bilgisayarda. Bunun yerine Farklı Kaydet'i kullanın.
+{} already exists. Choose another name.	{} zaten var. Başka bir ad seçin.
+Saved a copy to {}	Kopya {} konumuna kaydedildi
+Open a folder first (⌘O), then create files in it.	Önce bir klasör açın (⌘O), sonra içinde dosya oluşturun.
+Type a name	Bir ad yazın
+Paths can't end with / or contain . or .. parts	Yollar / ile bitemez ya da . veya .. parçaları içeremez
+Names can't contain / or be . or ..	Adlar / içeremez ya da . veya .. olamaz
+No matches	Eşleşme yok
+Move “{0}” into “{1}”?	“{0}”, “{1}” içine taşınsın mı?
+An existing file with the same name is never overwritten.	Aynı adlı mevcut bir dosyanın üzerine hiçbir zaman yazılmaz.
+Move	Taşı
+Can't copy a folder into itself.	Bir klasör kendi içine kopyalanamaz.
+Could not paste: {}	Yapıştırılamadı: {}
+Move “{}” to the Trash?	“{}” Çöp Kutusu'na taşınsın mı?
+You can restore it from the Trash.	Çöp Kutusu'ndan geri yükleyebilirsiniz.
+Unsaved changes stay open in their tabs; saving recreates the file.	Kaydedilmemiş değişiklikler sekmelerinde açık kalır; kaydedince dosya yeniden oluşturulur.
+Move to Trash	Çöp Kutusu'na Taşı
+Delete “{}” permanently?	“{}” kalıcı olarak silinsin mi?
+The folder and everything in it will be deleted.	Klasör ve içindeki her şey silinecek.
+It can't be moved to the Trash ({}). Deleting it permanently can't be undone.	Çöp Kutusu'na taşınamıyor ({}). Kalıcı silme geri alınamaz.
+Delete Permanently	Kalıcı Olarak Sil
+
+# ---- Plural entries: key = English singular|English plural, value = the language's forms joined by | (Turkish has one) ----
+{} cursor|{} cursors	{} imleç
+{} conflict|{} conflicts	{} çakışma
+{} result|{} results	{} sonuç
+{} command|{} commands	{} komut
+
+# ======== Editor, search, pickers, language servers, terminal, tasks, markdown, spell, merge editor (surfaces of part A) ========
+# ---- Language servers (LSP) and code navigation ----
+Language servers are off in “{}” until you trust it: they can run the project's build scripts. Run “Workspace: Trust This Folder”.	“{}” klasörüne güvenmediğiniz sürece dil sunucuları kapalı: projenin derleme betiklerini çalıştırabilirler. “Çalışma Alanı: Bu Klasöre Güven” komutunu çalıştırın.
+{} isn't available. Or set “lsp.servers” in settings.	{} kullanılamıyor. Ya da ayarlarda “lsp.servers” değerini belirleyin.
+{0} isn't available ({1}). Or set “lsp.servers” in settings.	{0} kullanılamıyor ({1}). Ya da ayarlarda “lsp.servers” değerini belirleyin.
+{0} isn't available on {1}. Or set “lsp.servers” in settings.	{0}, {1} üzerinde kullanılamıyor. Ya da ayarlarda “lsp.servers” değerini belirleyin.
+{0} isn't available on {1} ({2}). Or set “lsp.servers” in settings.	{0}, {1} üzerinde kullanılamıyor ({2}). Ya da ayarlarda “lsp.servers” değerini belirleyin.
+install clangd (Xcode tools, apt install clangd)	clangd'yi kurun (Xcode araçları, apt install clangd)
+brew install jdtls, or unpack Eclipse JDT LS and put jdtls on PATH	brew install jdtls ya da Eclipse JDT LS'yi açıp jdtls'yi PATH'e ekleyin
+install Xcode or a Swift toolchain (it contains sourcekit-lsp)	Xcode'u ya da bir Swift araç zinciri kurun (sourcekit-lsp içindedir)
+{} keeps crashing; restart the folder to try again.	{} sürekli çöküyor; yeniden denemek için klasörü yeniden başlatın.
+Choose an answer (Esc: none)	Bir yanıt seçin (Esc: hiçbiri)
+No language server for this file	Bu dosya için dil sunucusu yok
+Put the cursor on a symbol to rename it	Yeniden adlandırmak için imleci bir sembolün üzerine getirin
+The element can't be renamed.	Bu öğe yeniden adlandırılamaz.
+Nothing to rename here	Burada yeniden adlandırılacak bir şey yok
+not UTF-8	UTF-8 değil
+Could not change {}	Değiştirilemedi: {}
+Changed {0} file ({1} file operations skipped)|Changed {0} files ({1} file operations skipped)	{0} dosya değiştirildi ({1} dosya işlemi atlandı)
+Changed {} file|Changed {} files	{} dosya değiştirildi
+No references found	Başvuru bulunamadı
+No implementations found	Uygulama bulunamadı
+No definition found	Tanım bulunamadı
+No type definition found	Tür tanımı bulunamadı
+No incoming calls found	Gelen çağrı bulunamadı
+No outgoing calls found	Giden çağrı bulunamadı
+No supertypes found	Üst tür bulunamadı
+No subtypes found	Alt tür bulunamadı
+This language server does not support incoming calls	Bu dil sunucusu gelen çağrıları desteklemiyor
+This language server does not support outgoing calls	Bu dil sunucusu giden çağrıları desteklemiyor
+This language server does not support supertypes	Bu dil sunucusu üst türleri desteklemiyor
+This language server does not support subtypes	Bu dil sunucusu alt türleri desteklemiyor
+{} reference|{} references	{} başvuru
+{} bookmark|{} bookmarks	{} yer imi
+{} implementation|{} implementations	{} uygulama
+{} definition|{} definitions	{} tanım
+{} type definition|{} type definitions	{} tür tanımı
+{} incoming call|{} incoming calls	{} gelen çağrı
+{} outgoing call|{} outgoing calls	{} giden çağrı
+{} supertype|{} supertypes	{} üst tür
+{} subtype|{} subtypes	{} alt tür
+No symbols in this file	Bu dosyada sembol yok
+Go to symbol in file	Dosyada sembole git
+No language server is running. Open a file of the language first.	Çalışan bir dil sunucusu yok. Önce bu dilde bir dosya açın.
+Searching…	Aranıyor…
+No symbols matching “{}”	“{}” ile eşleşen sembol yok
+No quick fixes here	Burada hızlı düzeltme yok
+Quick fix	Hızlı düzeltme
+Formatted	Biçimlendirildi
+Already formatted	Zaten biçimlendirilmiş
+Could not format: {}	Biçimlendirilemedi: {}
+Minified	Küçültüldü
+Already minified	Zaten küçültülmüş
+Could not minify: {}	Küçültülemedi: {}
+language server is not running	dil sunucusu çalışmıyor
+{0}: no answer from {1}	{0}: {1} yanıt vermedi
+No code lens on this line	Bu satırda Code Lens yok
+Cannot open this link: {}	Bu bağlantı açılamıyor: {}
+
+# ---- Editor, find, git hunks, conflicts, peek, accessibility ----
+No block comment syntax for this file type	Bu dosya türü için blok yorum sözdizimi yok
+Not valid Base64: left unchanged	Geçerli bir Base64 değil: değiştirilmedi
+Not valid URL encoding: left unchanged	Geçerli bir URL kodlaması değil: değiştirilmedi
+Not valid {}: left unchanged	Geçerli bir {} değil: değiştirilmedi
+No enclosing brackets	Çevreleyen parantez yok
+No line comment syntax for this file type	Bu dosya türü için satır yorum sözdizimi yok
+No comment syntax for this file type	Bu dosya türü için yorum sözdizimi yok
+Invalid pattern	Geçersiz desen
+No results	Sonuç yok
+{0} of {1}{2}	{1}{2} içinde {0}
+{0}{1} found	{0}{1} bulundu
+Replaced {}	{} değiştirildi
+Not in a git repository	Bir git deposunda değil
+This file is outside the repository root	Bu dosya deponun kök klasörünün dışında
+Staging changes needs a UTF-8 file	Değişiklikleri stage'e almak için dosyanın UTF-8 olması gerekir
+Still staging the previous change…	Önceki değişiklik hâlâ stage'e alınıyor…
+No change here to stage	Burada stage'e alınacak değişiklik yok
+Staged {} change|Staged {} changes	{} değişiklik stage'e alındı
+No git changes to revert	Geri alınacak git değişikliği yok
+Reverting a change is not supported in this file (non-UTF-8 or CR-only line endings)	Bu dosyada değişikliği geri almak desteklenmiyor (UTF-8 olmayan ya da yalnızca CR satır sonları)
+No change here to revert	Burada geri alınacak değişiklik yok
+No changes in this file	Bu dosyada değişiklik yok
+No merge conflicts in this file	Bu dosyada birleştirme çakışması yok
+Put the cursor inside a merge conflict	İmleci bir birleştirme çakışmasının içine getirin
+Resolved {} conflict|Resolved {} conflicts	{} çakışma çözüldü
+No problems in this file	Bu dosyada sorun yok
+No bookmarks in this file (⌥⌘K adds one)	Bu dosyada yer imi yok (⌥⌘K bir tane ekler)
+Accept Current Change	Geçerli Değişikliği Kabul Et
+Accept Incoming Change	Gelen Değişikliği Kabul Et
+Accept Both Changes	Her İki Değişikliği Kabul Et
+Open Merge Editor	Birleştirme Düzenleyicisini Aç
+Send Request	İstek Gönder
+(+{} more)	(+{} daha)
+click to open · Esc to close	açmak için tıklayın · kapatmak için Esc
+This looks like a binary file, so it was not opened as text.	Bu bir ikili dosyaya benziyor; bu yüzden metin olarak açılmadı.
+Tabs	Sekme
+{} space|{} spaces	{} boşluk
+Plain Text	Düz Metin
+You · Uncommitted changes	Siz · Commit edilmemiş değişiklikler
+folder	klasör
+Status bar	Durum çubuğu
+{} (modified)	{} (değiştirildi)
+{0} lines, showing from line {1}	{0} satır, {1}. satırdan itibaren gösteriliyor
+Connecting to {}	{} sunucusuna bağlanılıyor
+Reconnecting to {0} (attempt {1})	{0} sunucusuna yeniden bağlanılıyor (deneme {1})
+Branch {}	Dal {}
+{0} errors, {1} warnings	{0} hata, {1} uyarı
+
+# ---- Editor menus, pickers for language mode, line endings and indentation ----
+Find All References	Tüm Başvuruları Bul
+Go to Symbol in Editor…	Düzenleyicide Sembole Git…
+Change All Occurrences	Tüm Eşleşmeleri Değiştir
+Quick Fix…	Hızlı Düzeltme…
+Toggle Bookmark	Yer İmini Aç/Kapat
+View File History	Dosya Geçmişini Göster
+Blame Line	Satırın Blame Bilgisini Göster
+{} tab with unsaved changes stayed open.|{} tabs with unsaved changes stayed open.	Kaydedilmemiş değişiklikleri olan {} sekme açık kaldı.
+Compare	Karşılaştır
+Could not read {0}: {1}	{0} okunamadı: {1}
+Could not compare: {}	Karşılaştırılamadı: {}
+Hex dump (read-only copy)	Hex dökümü (salt okunur kopya)
+Markdown preview	Markdown önizlemesi
+Compare with the saved version	Kaydedilmiş sürümle karşılaştır
+Indent using 2 spaces	2 boşlukla girinti ver
+Indent using 4 spaces	4 boşlukla girinti ver
+Indent using 8 spaces	8 boşlukla girinti ver
+Indent using tabs	Sekmeyle girinti ver
+Convert indentation to spaces	Girintiyi boşluğa dönüştür
+Convert indentation to tabs	Girintiyi sekmeye dönüştür
+Open the active file with…	Etkin dosyayı şununla aç…
+Language mode for this file	Bu dosyanın dil modu
+Line endings for this file (applied on save)	Bu dosyanın satır sonları (kaydederken uygulanır)
+Indentation for this file	Bu dosyanın girintisi
+binary	ikili
+diff	fark
+whole file	tüm dosya
+setting	ayar
+Always open *.{0} as {1}	*.{0} dosyalarını her zaman {1} olarak aç
+
+# ---- Empty editor area ----
+Empty group: ⌘P opens a file here	Boş grup: ⌘P burada bir dosya açar
+Opening…	Açılıyor…
+Pick a file from the tree, or:	Ağaçtan bir dosya seçin ya da:
+Go to File	Dosyaya Git
+Command Palette	Komut Paleti
+Lightweight editing, on this machine or over SSH.	Hafif düzenleme: bu makinede ya da SSH üzerinden.
+Start	Başlangıç
+Nothing yet.	Henüz yok.
+
+# ---- Problems, Output panel, Log filter, Zoom ----
+Zoom: {}	Yakınlaştırma: {}
+No output yet. Language server logs appear here.	Henüz çıktı yok. Dil sunucusu günlükleri burada görünür.
+No problems. Language servers start when you open a file.	Sorun yok. Dil sunucuları bir dosya açtığınızda başlar.
+No problems.	Sorun yok.
+Filter	Süz
+Filtering {0} for “{1}”…	{0} dosyası “{1}” için süzülüyor…
+Filtering needs sh, tail, grep and cut on the host (on Windows: Git Bash or WSL). {}	Süzme için sunucuda sh, tail, grep ve cut gerekir (Windows'ta: Git Bash ya da WSL). {}
+They were not found.	Bulunamadılar.
+“{0}” is not a valid regular expression ({1}). Escape special characters with a backslash.	“{0}” geçerli bir düzenli ifade değil ({1}). Özel karakterlerin önüne ters eğik çizgi koyun.
+No lines match “{}”.	“{}” ile eşleşen satır yok.
+{0} line matches “{1}” (showing the last 5000).|{0} lines match “{1}” (showing the last 5000).	{0} satır “{1}” ile eşleşiyor (son 5000 gösteriliyor).
+{0} line matches “{1}”.|{0} lines match “{1}”.	{0} satır “{1}” ile eşleşiyor.
+test panicked: {}	test çöktü: {}
+test failed: {}	test başarısız: {}
+task	görev
+
+# ---- Terminal panel, tasks and tests, panel header ----
+Process exited with code {}. Press any key to close.	Süreç {} koduyla çıktı. Kapatmak için bir tuşa basın.
+Process ended. Press any key to close.	Süreç sona erdi. Kapatmak için bir tuşa basın.
+Could not start a shell: {}	Kabuk başlatılamadı: {}
+Close a terminal first: at most {} can be open.	Önce bir terminali kapatın: en fazla {} terminal açık olabilir.
+Open a folder first: tasks come from its package.json, Makefile, Cargo.toml or tasks.jsonc.	Önce bir klasör açın: görevler klasörün package.json, Makefile, Cargo.toml ya da tasks.jsonc dosyasından gelir.
+No tasks found. “Tasks: Configure Tasks” creates .codeyard/tasks.jsonc.	Görev bulunamadı. “Görevler: Görevleri Yapılandır” komutu .codeyard/tasks.jsonc dosyasını oluşturur.
+Run task	Görev çalıştır
+Open a file inside a folder to run its tests.	Testlerini çalıştırmak için bir klasörün içindeki bir dosyayı açın.
+This file is outside the open folder.	Bu dosya açık klasörün dışında.
+No tests found for this file type.	Bu dosya türü için test bulunamadı.
+No test at the cursor: put it inside a test function.	İmlecin altında test yok: imleci bir test işlevinin içine getirin.
+Could not create {0}: {1}	{0} oluşturulamadı: {1}
+Output	Çıktı
+Debug	Hata Ayıklama
+Hide Panel (⌘J)	Paneli Gizle (⌘J)
+New Terminal (⌃⇧`)	Yeni Terminal (⌃⇧`)
+Move Panel to Bottom	Paneli Alta Taşı
+Move Panel Right	Paneli Sağa Taşı
+Restore Panel Size	Panel Boyutunu Geri Yükle
+Maximize Panel	Paneli Büyüt
+{} (exited)	{} (çıktı)
+
+# ---- Workbench notices ----
+“{}” is not a port number	“{}” bir bağlantı noktası numarası değil
+Theme skipped: {}	Tema atlandı: {}
+invalid JSON: {}	geçersiz JSON: {}
+a theme must be a JSON object	tema bir JSON nesnesi olmalı
+unrecognized theme format (expected “color” or “colors”)	tanınmayan tema biçimi (“color” ya da “colors” bekleniyordu)
+“color” must be an object	“color” bir nesne olmalı
+{}: the color must be a string	{}: renk string olmalı
+{}: invalid color {}	{}: geçersiz renk {}
+unknown role: {}	bilinmeyen rol: {}
+No VS Code settings found on this machine	Bu makinede VS Code ayarı bulunamadı
+The connection is down, so files with unsaved changes cannot be saved. Use File: Save a Copy to This Computer… to keep them, or close them, then reconnect.	Bağlantı kesik; bu yüzden kaydedilmemiş değişiklikleri olan dosyalar kaydedilemez. Onları korumak için Dosya: Bu Bilgisayara Kopya Kaydet… komutunu kullanın ya da kapatın, sonra yeniden bağlanın.
+Save or close the files with unsaved changes first.	Önce kaydedilmemiş değişiklikleri olan dosyaları kaydedin ya da kapatın.
+Open a folder first: project settings live in it.	Önce bir klasör açın: proje ayarları klasörün içinde durur.
+This file mixes line endings; saving writes all of them as {}, like its first line. Change it in the status bar.	Bu dosyada karışık satır sonları var; kaydederken hepsi ilk satırı gibi {} olarak yazılır. Durum çubuğundan değiştirebilirsiniz.
+Replaced {} match|Replaced {} matches	{} eşleşme değiştirildi
+Replaced {0}; could not change {1}	{0} eşleşme değiştirildi; şunlar değiştirilemedi: {1}
+
+# ---- Search panel and replace in files ----
+Files to include (e.g. *.rs, src/**)	Dahil edilecek dosyalar (ör. *.rs, src/**)
+Files to exclude	Hariç tutulacak dosyalar
+# Regex, Match Case	# Düzenli ifade, Büyük/Küçük Harf Duyarlı
+# Regex, Ignore Case	# Düzenli ifade, Büyük/Küçük Harf Duyarsız
+# Match Case	# Büyük/Küçük Harf Duyarlı
+# Ignore Case	# Büyük/Küçük Harf Duyarsız
+# Query: {}	# Sorgu: {}
+Open a folder to search in it.	İçinde aramak için bir klasör açın.
+No results in {} file.|No results in {} files.	{} dosyada sonuç yok.
+{} result in 1 file|{} results in 1 file	1 dosyada {} sonuç
+{0} result in {1} files|{0} results in {1} files	{1} dosyada {0} sonuç
+{0} (stopped at {1})	{0} ({1} sonuçta durdu)
+Clear the search field	Arama alanını temizle
+Match case	Büyük/küçük harfe duyarlı
+Whole word	Tam sözcük
+Regular expression	Düzenli ifade
+Preserve case when replacing	Değiştirirken büyük/küçük harfi koru
+Replace All	Tümünü Değiştir
+Replace every match in these files (↵ in the field)	Bu dosyalardaki tüm eşleşmeleri değiştir (alanda ↵)
+Files to include / exclude	Dahil edilecek / hariç tutulacak dosyalar
+Previous result (⇧F4)	Önceki sonuç (⇧F4)
+Next result (F4)	Sonraki sonuç (F4)
+Expand all results	Tüm sonuçları genişlet
+Collapse all results	Tüm sonuçları daralt
+Run the search again	Aramayı yeniden çalıştır
+Clear the search	Aramayı temizle
+Replace in this file	Bu dosyada değiştir
+Dismiss this file from the results	Bu dosyayı sonuçlardan çıkar
+Replace {0} match in 1 file with “{1}”?|Replace {0} matches in 1 file with “{1}”?	1 dosyadaki {0} eşleşme “{1}” ile değiştirilsin mi?
+Replace {0} match in {1} files with “{2}”?|Replace {0} matches in {1} files with “{2}”?	{1} dosyadaki {0} eşleşme “{2}” ile değiştirilsin mi?
+The search stopped at the result limit: only the files listed are changed. Open files can be undone; closed files are written to disk.	Arama sonuç sınırında durdu: yalnızca listelenen dosyalar değiştirilir. Açık dosyalar geri alınabilir; kapalı dosyalar diske yazılır.
+Open files can be undone with ⌘Z; closed files are written to disk.	Açık dosyalar ⌘Z ile geri alınabilir; kapalı dosyalar diske yazılır.
+
+# ---- Find and replace bar ----
+Match case (⌥C)	Büyük/küçük harfe duyarlı (⌥C)
+Whole word (⌥W)	Tam sözcük (⌥W)
+Regular expression (⌥R)	Düzenli ifade (⌥R)
+Previous match (⇧↵)	Önceki eşleşme (⇧↵)
+Next match (↵)	Sonraki eşleşme (↵)
+Find in selection (⌥⌘L)	Seçimde bul (⌥⌘L)
+Select all matches (⌥↵)	Tüm eşleşmeleri seç (⌥↵)
+Close (Esc)	Kapat (Esc)
+Preserve case (⌥P)	Büyük/küçük harfi koru (⌥P)
+Replace (↵)	Değiştir (↵)
+Replace all (⌥⌘↵)	Tümünü değiştir (⌥⌘↵)
+
+# ---- Large file and log views ----
+“{}” is not in the dictionary. Quick Fix shows suggestions.	“{}” sözlükte yok. Hızlı Düzeltme önerileri gösterir.
+Find in file (searched on the host)	Dosyada bul (sunucuda aranır)
+{} KB · image preview	{} KB · görsel önizlemesi
+{} MB · image preview	{} MB · görsel önizlemesi
+{0} lines · {1}	{0} satır · {1}
+Indexing lines…	Satırlar dizinleniyor…
+{0} lines · {1} MB · read-only	{0} satır · {1} MB · salt okunur
+↵ next · ⇧↵ previous · Esc	↵ sonraki · ⇧↵ önceki · Esc
+↓ {} new line|↓ {} new lines	↓ {} yeni satır
+Follow	Takip Et
+Follow the end of the file as it grows (tail -f). Scrolling up pauses.	Dosya büyürken sonunu takip et (tail -f). Yukarı kaydırmak duraklatır.
+the file is gone (deleted or moved); following continues if it comes back	dosya yok (silinmiş ya da taşınmış); geri gelirse takip sürer
+the file is no longer readable (permission denied)	dosya artık okunamıyor (erişim reddedildi)
+the path is now a folder, not a file	yol artık bir dosya değil, klasör
+the connection to the host is down; following resumes when it is back	sunucuyla bağlantı kesik; geri gelince takip yeniden başlar
+the file cannot be read right now ({})	dosya şu anda okunamıyor ({})
+unknown error	bilinmeyen hata
+
+# ---- Merge editor and Markdown preview ----
+Merge {}	Birleştirme: {}
+(nothing)	(hiçbir şey)
+… {} more line|… {} more lines	… {} satır daha
+All conflicts are resolved	Tüm çakışmalar çözüldü
+{} conflict left|{} conflicts left	{} çakışma kaldı
+Accept All Current	Tüm Geçerlileri Kabul Et
+Accept All Incoming	Tüm Gelenleri Kabul Et
+Save File	Dosyayı Kaydet
+Nothing left to resolve	Çözülecek bir şey kalmadı
+Save the file to finish, then stage it in Source Control.	Bitirmek için dosyayı kaydedin, sonra Kaynak Denetimi'nde stage'e alın.
+Conflict {0} of {1}	Çakışma {0} / {1}
+lines {0}–{1}	{0}–{1}. satırlar
+Current	Geçerli
+Common ancestor	Ortak ata
+Incoming	Gelen
+Accept Current	Geçerliyi Kabul Et
+Accept Incoming	Geleni Kabul Et
+Accept Both	İkisini de Kabul Et
+Both, Incoming First	İkisi de, Önce Gelen
+Result	Sonuç
+(the lines are removed)	(satırlar kaldırılır)
+Hover an option to preview the result.	Sonucu önizlemek için bir seçeneğin üzerine gelin.
+[image: {}]	[görsel: {}]
+Preview {}	Önizleme: {}
+Preview of {}	Önizleme: {}
+The file is empty.	Dosya boş.
+
+# ---- Spell check ----
+{0} could not be read ({1})	{0} okunamadı ({1})
+{} is not installed	{} kurulu değil
+Spelling: {}. Run “Spelling: Install Dictionary…”.	Yazım denetimi: {}. “Yazım Denetimi: Sözlük Kur…” komutunu çalıştırın.
+Add “{}” to the dictionary	“{}” sözcüğünü sözlüğe ekle
+your words	sözcükleriniz
+Ignore “{}” in this session	Bu oturumda “{}” sözcüğünü yok say
+Spelling: “{}”	Yazım denetimi: “{}”
+No misspelled word at the cursor.	İmlecin altında yanlış yazılmış sözcük yok.
+Added “{}” for this session only: there is no settings folder to keep your dictionary in.	“{}” yalnızca bu oturum için eklendi: sözlüğünüzü saklayacak bir ayar klasörü yok.
+Could not save your dictionary: {}	Sözlüğünüz kaydedilemedi: {}
+Added “{}” to your dictionary.	“{}” sözlüğünüze eklendi.
+installed · {}	kurulu · {}
+about {0} MB · {1}	yaklaşık {0} MB · {1}
+Install which dictionary? (English is built in)	Hangi sözlük kurulsun? (İngilizce yerleşiktir)
+Downloading the {0} dictionary (about {1} MB)…	{0} sözlüğü indiriliyor (yaklaşık {1} MB)…
+The {} dictionary is installed and on.	{} sözlüğü kuruldu ve açık.
+download failed	indirme başarısız
+Could not install the {0} dictionary: {1}. Check your internet connection and try again.	{0} sözlüğü kurulamadı: {1}. İnternet bağlantınızı denetleyip yeniden deneyin.
+Could not install the {0} dictionary: {1}.	{0} sözlüğü kurulamadı: {1}.
+
+# ---- Settings catalog descriptions (Settings page and settings picker) ----
+Font size of the editor	Düzenleyicinin yazı tipi boyutu
+Line height in pixels	Piksel cinsinden satır yüksekliği
+Editor font (empty: built-in monospace)	Düzenleyici yazı tipi (boş: yerleşik eş aralıklı yazı tipi)
+Spaces per indent level (empty: detect per file)	Girinti düzeyi başına boşluk sayısı (boş: dosyaya göre algıla)
+Indent with spaces instead of tabs	Sekme yerine boşlukla girinti ver
+Wrap long lines at the window edge	Uzun satırları pencere kenarında kaydır
+Cursor animation	İmleç animasyonu
+Show the minimap	Mini haritayı göster
+Highlight other uses of the word under the cursor	İmlecin altındaki sözcüğün diğer kullanımlarını vurgula
+Show indent guides	Girinti kılavuzlarını göster
+Format with the language server when saving	Kaydederken dil sunucusuyla biçimlendir
+Insert the closing bracket or quote	Kapanış parantezini ya da tırnağını ekle
+Suggest words from the file when there is no language server	Dil sunucusu yokken dosyadaki sözcükleri öner
+Save files automatically	Dosyaları otomatik kaydet
+Delay for afterDelay (ms)	afterDelay için gecikme (ms)
+Remove trailing spaces when saving	Kaydederken satır sonundaki boşlukları sil
+End files with a newline when saving	Kaydederken dosyaları satır sonuyla bitir
+Keep unsaved changes across restarts	Kaydedilmemiş değişiklikleri yeniden başlatmalarda koru
+Move deleted local files to the Trash	Silinen yerel dosyaları Çöp Kutusu'na taşı
+Encoding for files that are not UTF-8	UTF-8 olmayan dosyalar için kodlama
+Select the active file in the explorer	Etkin dosyayı Gezgin'de seç
+Show folders that only hold one folder as one row	Yalnızca tek klasör içeren klasörleri tek satır olarak göster
+Order of files and folders in the explorer	Gezgin'deki dosya ve klasörlerin sırası
+Show the Open Editors list in the explorer	Gezgin'de Açık Düzenleyiciler listesini göster
+Show spaces and tabs as marks	Boşlukları ve sekmeleri işaret olarak göster
+Line numbers in the gutter	Sol kenardaki satır numaraları
+Shape of the cursor	İmlecin şekli
+Color matching brackets by nesting depth	Eşleşen parantezleri iç içe geçme derinliğine göre renklendir
+Pin the enclosing function or class line while scrolling	Kaydırırken çevreleyen işlevin ya da sınıfın satırını üstte sabitle
+Format pasted text with the language server	Yapıştırılan metni dil sunucusuyla biçimlendir
+Let the language server format while typing }, ; or Enter	}, ; ya da Enter yazılırken dil sunucusu biçimlendirsin
+Box invisible and look-alike Unicode characters (zero-width spaces, bidi controls, Cyrillic letters inside Latin words)	Görünmez ve benzer görünen Unicode karakterleri çerçeve içine al (sıfır genişlikli boşluklar, çift yönlü denetimler, Latin sözcüklerin içindeki Kiril harfleri)
+Show a color swatch next to #rrggbb values	#rrggbb değerlerinin yanında renk örneği göster
+File and folder icons	Dosya ve klasör simgeleri
+UI font of the whole window (empty: system font)	Tüm pencerenin arayüz yazı tipi (boş: sistem yazı tipi)
+Show the editor tab bar	Düzenleyici sekme çubuğunu göster
+Show file icons on tabs	Sekmelerde dosya simgelerini göster
+When the close button of a tab shows	Sekmenin kapatma düğmesinin ne zaman görüneceği
+Show the file path above the editor	Dosya yolunu düzenleyicinin üstünde göster
+Width of the line cursor (px)	Çizgi imlecin genişliği (px)
+Show a tooltip when the mouse rests on a word	Fare bir sözcüğün üzerinde durunca ipucu göster
+Suggestions pop up while typing (off: only Ctrl+Space)	Yazarken öneriler açılır (kapalı: yalnızca Ctrl+Boşluk)
+Show the status bar	Durum çubuğunu göster
+Show the activity bar	Etkinlik çubuğunu göster
+Indent of each folder level in the explorer (px)	Gezgin'de her klasör düzeyinin girintisi (px)
+Ask before moving a file to the Trash	Bir dosyayı Çöp Kutusu'na taşımadan önce sor
+Ignore case unless the query has capital letters	Sorguda büyük harf yoksa büyük/küçük harfi yok say
+Show line numbers in search results	Arama sonuçlarında satır numaralarını göster
+Start search results folded or open	Arama sonuçları daraltılmış ya da açık başlasın
+Commits drawn in the Source Control graph	Kaynak Denetimi grafiğinde çizilen commit sayısı
+Commits listed in the explorer's Timeline	Gezgin'in Zaman Çizelgesi'nde listelenen commit sayısı
+Show who last changed the cursor line (and when) at the end of the line	İmlecin satırını en son kimin (ve ne zaman) değiştirdiğini satır sonunda göster
+Graph starts with every branch	Grafik tüm dallarla başlasın
+Highlight the line with the cursor	İmlecin bulunduğu satırı vurgula
+Highlight the matching bracket	Eşleşen parantezi vurgula
+Show fold arrows in the gutter	Sol kenarda katlama oklarını göster
+Stop a search after this many matches	Bir aramayı bu kadar eşleşmeden sonra durdur
+Font size of the terminal	Terminalin yazı tipi boyutu
+Lines kept in terminal history	Terminal geçmişinde tutulan satır sayısı
+Shell for new terminals (empty: login shell)	Yeni terminaller için kabuk (boş: oturum açma kabuğu)
+What opens at start: welcome (the start page), continue (where you left off, SSH hosts included) or blank (an empty window)	Başlangıçta ne açılır: welcome (başlangıç sayfası), continue (kaldığınız yer, SSH sunucuları dahil) ya da blank (boş pencere)
+Bring a folder's tabs and unsaved changes back when you open it	Bir klasörü açtığınızda sekmelerini ve kaydedilmemiş değişikliklerini geri getir
+Forward ports opened on SSH hosts	SSH sunucularında açılan bağlantı noktalarını yönlendir
+Start language servers	Dil sunucularını başlat
+Where .http requests are sent from: the workspace host (the server when connected over SSH) or this computer	.http isteklerinin nereden gönderileceği: çalışma alanı sunucusu (SSH ile bağlıyken sunucu) ya da bu bilgisayar
+Language of the menus, command palette, Welcome screen, status bar, Source Control, Explorer, Settings page chrome, file operations and Git prompts (the user guide lists exactly what is translated; the rest stays English): auto (the system language) or a language code, en or tr. Your own settings only; a folder cannot change it	Menülerin, komut paletinin, Karşılama ekranının, durum çubuğunun, Kaynak Denetimi'nin, Gezgin'in, Ayarlar sayfasının, dosya işlemlerinin ve Git istemlerinin dili (nelerin çevrildiği kullanıcı kılavuzunda yazar; gerisi İngilizce kalır): auto (sistem dili) ya da bir dil kodu, en veya tr. Yalnızca kendi ayarlarınızda geçerlidir; bir klasör bunu değiştiremez
+Ask before .http requests and schema downloads leave this computer: never, remote (the first request to each new host per session) or always. Your own settings only; a folder cannot change it	.http istekleri ve şema indirmeleri bu bilgisayardan çıkmadan önce sor: never (hiçbir zaman), remote (oturum başına her yeni sunucuya ilk istek) ya da always (her zaman). Yalnızca kendi ayarlarınızda geçerlidir; bir klasör bunu değiştiremez
+Underline misspelled words in prose files and in code comments	Yanlış yazılmış sözcüklerin altını düz yazı dosyalarında ve kod yorumlarında çiz
+Check comments in code files too (prose files are always checked)	Kod dosyalarındaki yorumları da denetle (düz yazı dosyaları her zaman denetlenir)
+Check JSON and YAML files against their schema (problems, hover, suggestions)	JSON ve YAML dosyalarını şemalarına göre denetle (sorunlar, üzerine gelince bilgi, öneriler)
+Download schemas from SchemaStore and cache them (off: only local and cached schemas)	Şemaları SchemaStore'dan indir ve önbelleğe al (kapalı: yalnızca yerel ve önbellekteki şemalar)
+Ask before moving a file or folder by dragging it in the explorer	Gezgin'de bir dosyayı ya da klasörü sürükleyerek taşımadan önce sor
+Draw the folder hierarchy lines in the explorer	Gezgin'de klasör hiyerarşisi çizgilerini çiz
+Show the author (avatar and name) on Source Control graph rows	Kaynak Denetimi grafiği satırlarında yazarı (avatar ve ad) göster
+Source Control graph view: graph (branch lanes), compact (one line per commit) or dates (grouped by day)	Kaynak Denetimi grafik görünümü: graph (dal şeritleri), compact (commit başına bir satır) ya da dates (güne göre gruplu)
+Show the short commit hash on Source Control graph rows	Kaynak Denetimi grafiği satırlarında kısa commit özetini göster
+Apply .editorconfig files (indent, line endings, final newline…)	.editorconfig dosyalarını uygula (girinti, satır sonları, son satır sonu…)
+Show type and parameter name hints from the language server	Dil sunucusundan tür ve parametre adı ipuçlarını göster
+Rename the matching HTML/XML tag while you edit one	Birini düzenlerken eşleşen HTML/XML etiketini de yeniden adlandır
+Show code lenses (reference counts, run/debug) above symbols	Sembollerin üstünde Code Lens göster (başvuru sayıları, çalıştır/hata ayıkla)
+Color symbols by their meaning, from the language server	Sembolleri anlamlarına göre renklendir (dil sunucusundan)
+Language of Uppercase / Lowercase / Title Case: auto (Turkish rules when the text has ı İ ş ğ), tr (i ↔ İ, ı ↔ I) or en	Büyük harf / Küçük harf / Başlık Biçimi dili: auto (metinde ı İ ş ğ varsa Türkçe kurallar), tr (i ↔ İ, ı ↔ I) ya da en
+Draw programming ligatures (=>, !=, …) in the editor font	Düzenleyici yazı tipinde programlama bağlarını (=>, !=, …) çiz
+Expand Emmet abbreviations (div.box>ul>li*3) with Tab	Emmet kısaltmalarını (div.box>ul>li*3) Tab ile aç
+Diff view side by side (off: inline)	Fark görünümü yan yana (kapalı: satır içi)
+Ask before running tasks, tests or the debugger of an untrusted folder	Güvenilmeyen bir klasörün görevlerini, testlerini ya da hata ayıklayıcısını çalıştırmadan önce sor
+Color theme of the whole window and the editor	Tüm pencerenin ve düzenleyicinin renk teması
+{} · Color theme (opens the theme picker)	{} · Renk teması (tema seçiciyi açar)
+Every setting, with comments	Her ayar, yorumlarıyla
+Search commands to bind a key	Tuş atamak için komut ara
+Type the shortcut for {} (e.g. cmd-shift-d), then save	{} için kısayolu yazın (ör. cmd-shift-d), sonra kaydedin
+Could not write {0}: {1}	{0} yazılamadı: {1}
+auto	otomatik
+
+# ---- Search results document, log filter ----
+Regex, Match Case	Düzenli ifade, Büyük/Küçük Harf Duyarlı
+Regex, Ignore Case	Düzenli ifade, Büyük/Küçük Harf Duyarsız
+Match Case	Büyük/Küçük Harf Duyarlı
+Ignore Case	Büyük/Küçük Harf Duyarsız
+Query: {}	Sorgu: {}
+Show lines matching (regular expression, case-insensitive), e.g. {}	Eşleşen satırları göster (düzenli ifade, büyük/küçük harf duyarsız), ör. {}
+
+# ---- Project switcher, recent folders, favorites, bookmarks ----
+Disconnect from {}	{} ile Bağlantıyı Kes
+Back to this computer; files with unsaved changes must be saved or closed first	Bu bilgisayara dön; kaydedilmemiş değişiklikleri olan dosyalar önce kaydedilmeli ya da kapatılmalı
+Reconnect to {}	{} Sunucusuna Yeniden Bağlan
+pinned	sabitlenmiş
+connected	bağlı
+connecting	bağlanıyor
+reconnecting	yeniden bağlanıyor
+SSH host	SSH sunucusu
+On this computer	Bu bilgisayarda
+Connect to SSH host…	SSH sunucusuna bağlan…
+Type a name from ~/.ssh/config or user@host	~/.ssh/config içindeki bir adı ya da user@host yazın
+Add SSH host…	SSH sunucusu ekle…
+Save user@host to ~/.ssh/config and connect	user@host bilgisini ~/.ssh/config dosyasına kaydet ve bağlan
+Manage SSH hosts…	SSH sunucularını yönet…
+Edit, test, set up key login, remove	Düzenle, sına, anahtarla giriş kur, kaldır
+Clone Git Repository…	Git Deposunu Klonla…
+Into a folder on this computer or the connected host	Bu bilgisayardaki ya da bağlı sunucudaki bir klasöre
+Connect to a running container…	Çalışan bir kapsayıcıya bağlan…
+Docker, then open a folder inside it	Docker, sonra içinde bir klasör aç
+Connect to WSL…	WSL'e bağlan…
+Open a folder in a Linux distribution	Bir Linux dağıtımında klasör aç
+local agent, protocol test	yerel aracı, protokol testi
+Open a project, connect to a host, or switch workspace	Bir proje açın, bir sunucuya bağlanın ya da çalışma alanını değiştirin
+Host name (from ~/.ssh/config) or user@host	Sunucu adı (~/.ssh/config içinden) ya da user@host
+Open a folder first, then save it as a project.	Önce bir klasör açın, sonra projeyi kaydedin.
+Save project as	Projeyi şu adla kaydet
+Project name	Proje adı
+Saved project “{}” (⌃R to switch)	“{}” projesi kaydedildi (değiştirmek için ⌃R)
+Remove from recent	Son açılanlardan kaldır
+“{}” can't be opened	“{}” açılamıyor
+Remove it from Recent?	Son Açılanlar'dan kaldırılsın mı?
+Keep	Tut
+★ Added to favorites: {}	★ Sık Kullanılanlara eklendi: {}
+Removed from favorites: {}	Sık Kullanılanlardan çıkarıldı: {}
+No favorites yet: right-click a file → Add to Favorites, or “Favorites: Toggle Active File”.	Henüz sık kullanılan yok: bir dosyaya sağ tıklayıp Sık Kullanılanlara Ekle'yi seçin ya da “Sık Kullanılanlar: Etkin Dosyayı Ekle/Çıkar” komutunu kullanın.
+Favorites	Sık Kullanılanlar
+No bookmarks yet: ⌥⌘K toggles one on the cursor's line.	Henüz yer imi yok: ⌥⌘K imlecin satırına bir yer imi ekler ya da kaldırır.
+
+# ---- Folder pickers and workspace folders, quick open rows ----
+Open “{}”	“{}” klasörünü aç
+Open a file first	Önce bir dosya açın
+Go to line {0}, column {1}	{0}. satır, {1}. sütuna git
+Go to line {}	{}. satıra git
+of {}	/ {}
+Type a line number between 1 and {}	1 ile {} arasında bir satır numarası yazın
+Indexing files…	Dosyalar dizinleniyor…
+No files in this folder	Bu klasörde dosya yok
+Showing the first 100,000 files of a very large folder	Çok büyük bir klasörün ilk 100.000 dosyası gösteriliyor
+Open a folder on {}	{} üzerinde bir klasör aç
+Path of the folder (~ is your home folder)	Klasörün yolu (~ ev klasörünüzdür)
+No matching folders	Eşleşen klasör yok
+Can't read {0}: {1}	{0} okunamıyor: {1}
+Can't open {0}: {1}	{0} açılamıyor: {1}
+Could not read the workspace file: {}	Çalışma alanı dosyası okunamadı: {}
+The workspace file lists no folder that exists on this computer.	Çalışma alanı dosyasında bu bilgisayarda var olan bir klasör yok.
+Workspace: {} folder in the Explorer.|Workspace: {} folders in the Explorer.	Çalışma alanı: Gezgin'de {} klasör.
+Open	Aç
+Open a folder first; folders are added to it.	Önce bir klasör açın; klasörler ona eklenir.
+{} is already in the workspace.	{} zaten çalışma alanında.
+At most {} extra folders fit in one workspace.	Bir çalışma alanına en fazla {} ek klasör sığar.
+The workspace has no extra folders.	Çalışma alanında ek klasör yok.
+Remove folder from workspace	Klasörü çalışma alanından kaldır
+
+# ---- Welcome leftovers, clone, themes, misc notices ----
+Open a Markdown file (.md) to preview it.	Önizlemek için bir Markdown dosyası (.md) açın.
+Open a file with merge conflicts first.	Önce birleştirme çakışması olan bir dosya açın.
+No merge conflicts in this file.	Bu dosyada birleştirme çakışması yok.
+Next	İleri
+Repository URL (https://… or git@host:owner/repo)	Depo adresi (https://… ya da git@host:owner/repo)
+That does not look like a repository address.	Bu bir depo adresine benzemiyor.
+Clone	Klonla
+Folder to clone into	Klonlanacak klasör
+Cloning {}…	{} klonlanıyor…
+Could not find the home folder; type an absolute path.	Ev klasörü bulunamadı; mutlak bir yol yazın.
+git clone failed	git clone başarısız
+Cloned. Opening the folder…	Klonlandı. Klasör açılıyor…
+Clone failed: {}	Klonlama başarısız: {}
+Could not save the theme: {}	Tema kaydedilemedi: {}
+Unknown theme '{0}'. Available: {1}	Bilinmeyen tema: '{0}'. Kullanılabilir olanlar: {1}
+dark	koyu
+light	açık
+{} · user	{} · kullanıcı
+{} · VS Code import	{} · VS Code'dan içe aktarma
+Select a color theme	Bir renk teması seçin
+Select a file icon theme	Bir dosya simgesi teması seçin
+Open as Hex	Hex Olarak Aç
+Restarting language servers…	Dil sunucuları yeniden başlatılıyor…
+Could not open {0}: {1}	{0} açılamadı: {1}
+No file “{}” in this project	Bu projede “{}” dosyası yok
+Language Badges	Dil Rozetleri
+Colorful Folders	Renkli Klasörler
+Minimal (Default)	Sade (Varsayılan)
+None	Yok
+File glyphs tinted by language, accent folders	Dile göre renklendirilmiş dosya simgeleri, vurgu renginde klasörler
+Small colored badges with the language's letters	Dilin harflerini taşıyan küçük renkli rozetler
+Folders colored by purpose (src, tests, docs…) and colored file glyphs	Amacına göre renklendirilmiş klasörler (src, tests, docs…) ve renkli dosya simgeleri
+One quiet color, outline glyphs	Tek ve sakin bir renk, çerçeve çizgili simgeler
+Solid blue folders like Finder, outline files with a language dot like GitHub	Finder gibi dolgulu mavi klasörler, GitHub gibi dil noktalı çerçeve çizgili dosyalar
+Solid folders colored and marked by purpose, solid files colored by language	Amacına göre renklendirilmiş ve işaretlenmiş dolgulu klasörler, dile göre renklendirilmiş dolgulu dosyalar
+Names only	Yalnızca adlar
+
+# ---- File operations leftovers ----
+too many copies	çok fazla kopya
+
+# ---- LSP symbol kinds (symbol pickers) ----
+file	dosya
+module	modül
+namespace	ad alanı
+package	paket
+class	sınıf
+method	yöntem
+property	özellik
+field	alan
+constructor	oluşturucu
+enum	numaralandırma
+interface	arayüz
+function	işlev
+variable	değişken
+constant	sabit
+string	dize
+enum member	numaralandırma üyesi
+struct	yapı
+event	olay
+operator	işleç
+type parameter	tür parametresi
+symbol	sembol
+
+# ======== SSH, transfers, ports, debugger, .http, GitHub, git operations, dialogs, settings notices (surfaces of part B) ========
+# ---- SSH hosts: management menu, add/edit/remove/test, key login ----
+Add a host	Sunucu ekle
+user@host or user@host:port as name	user@host veya user@host:port; takma ad için “as ad” ekleyin
+Edit a host	Sunucuyu düzenle
+port, user, key file, jump host	bağlantı noktası, kullanıcı, anahtar dosyası, atlama sunucusu
+Test a connection	Bağlantıyı sına
+reachable? architecture? agent ready?	erişilebilir mi? mimari? araç hazır mı?
+Set up key login	Anahtarla girişi kur
+copy your public key so no password is needed	parola gerekmesin diye genel anahtarınızı kopyalayın
+Remove a host	Sunucuyu kaldır
+from ~/.ssh/config (a backup is kept)	~/.ssh/config dosyasından (yedek tutulur)
+Open ~/.ssh/config	~/.ssh/config dosyasını aç
+edit the file by hand	dosyayı elle düzenleyin
+Add	Ekle
+user@host, user@host:2222, or user@host as name  (saved to ~/.ssh/config)	user@host, user@host:2222 veya user@host as ad  (~/.ssh/config dosyasına kaydedilir)
+Could not find your home folder	Ev klasörünüz bulunamadı
+Saved to ~/.ssh/config. Connecting uses your SSH keys and ssh-agent; a password prompt appears in this window if needed.	~/.ssh/config dosyasına kaydedildi. Bağlanırken SSH anahtarlarınız ve ssh-agent kullanılır; gerekirse parola istemi bu pencerede görünür.
+Added “{}”	“{}” eklendi
+Connect	Bağlan
+Not Now	Şimdi Değil
+Remove which SSH host from ~/.ssh/config?	~/.ssh/config dosyasından hangi SSH sunucusu kaldırılsın?
+Test the connection to which SSH host?	Hangi SSH sunucusuna bağlantı sınansın?
+Manage SSH hosts	SSH sunucularını yönet
+Edit which SSH host?	Hangi SSH sunucusu düzenlensin?
+Set up key login (no password) for which SSH host?	Hangi SSH sunucusu için anahtarla giriş (parolasız) kurulsun?
+No SSH hosts yet. Use Remote: Add SSH Host…	Henüz SSH sunucusu yok. Uzak: SSH Sunucusu Ekle… komutunu kullanın.
+You are connected to “{}”. Disconnect first.	“{}” sunucusuna bağlısınız. Önce bağlantıyı kesin.
+Remove “{}” from ~/.ssh/config?	“{}” ~/.ssh/config dosyasından kaldırılsın mı?
+Only this host's entry is removed. The previous file is kept as config.codeyard-bak.	Yalnızca bu sunucunun girdisi kaldırılır. Önceki dosya config.codeyard-bak adıyla saklanır.
+Removed “{}” from ~/.ssh/config	“{}” ~/.ssh/config dosyasından kaldırıldı
+“{}” was not found in ~/.ssh/config	“{}” ~/.ssh/config dosyasında bulunamadı
+Testing {}…	{} sınanıyor…
+{}: reachable in {} ms · {} · ready	{0}: {1} ms içinde erişildi · {2} · hazır
+{}: reachable ({}), but this app has no agent for {}	{0}: erişilebilir ({1}) ancak bu uygulamada {2} için araç yok
+{}: reachable, but {} is not a supported server	{0}: erişilebilir ancak {1} desteklenen bir sunucu değil
+{}: {}	{0}: {1}
+“{}” is not in the SSH config (or shares a Host line with other names: edit the file).	“{}” SSH yapılandırmasında yok (ya da Host satırını başka adlarla paylaşıyor: dosyayı düzenleyin).
+not set	ayarlı değil
+Edit “{}”: which setting?	“{}” için hangi ayar düzenlensin?
+{} (empty removes the setting)	{} (boş bırakırsanız ayar kaldırılır)
+Removed {} from “{}”.	“{1}” sunucusundan {0} kaldırıldı.
+“{}”: {} = {}	“{0}”: {1} = {2}
+Your public key (~/.ssh/id_ed25519.pub; created if you have none) is added to the server's authorized_keys, so later connections need no password. You may be asked for the server's password once.	Genel anahtarınız (~/.ssh/id_ed25519.pub; yoksa oluşturulur) sunucunun authorized_keys dosyasına eklenir; böylece sonraki bağlantılar parola istemez. Sunucunun parolası bir kez istenebilir.
+Set up key login for “{}”?	“{}” için anahtarla giriş kurulsun mu?
+Set Up	Kur
+Setting up key login for {}…	{} için anahtarla giriş kuruluyor…
+Key login is set up for “{}” (created {}). The next connection needs no password.	“{0}” için anahtarla giriş kuruldu (oluşturulan: {1}). Sonraki bağlantı parola istemez.
+Key login is set up for “{}”. The next connection needs no password.	“{}” için anahtarla giriş kuruldu. Sonraki bağlantı parola istemez.
+Key login was already set up for “{}” (created {}). The next connection needs no password.	“{0}” için anahtarla giriş zaten kurulmuştu (oluşturulan: {1}). Sonraki bağlantı parola istemez.
+Key login was already set up for “{}”. The next connection needs no password.	“{}” için anahtarla giriş zaten kurulmuştu. Sonraki bağlantı parola istemez.
+Could not set up key login for {}: {}	{0} için anahtarla giriş kurulamadı: {1}
+failed	başarısız
+# ---- SSH connect, reconnect, WSL/containers, askpass prompts, workspace trust ----
+WSL distribution	WSL dağıtımı
+Connect to which WSL distribution?	Hangi WSL dağıtımına bağlanılsın?
+Connect to which running container?	Çalışan hangi kapsayıcıya bağlanılsın?
+No WSL distributions found.	WSL dağıtımı bulunamadı.
+No running containers.	Çalışan kapsayıcı yok.
+could not list	listelenemedi
+Could not connect to {}: {}	{0} sunucusuna bağlanılamadı: {1}
+Connection lost: {}	Bağlantı koptu: {}
+The folder could not be read on the server: {}	Klasör sunucuda okunamadı: {}
+The connection to {} dropped. Reconnecting…	{} sunucusuyla bağlantı koptu. Yeniden bağlanılıyor…
+Reconnected. Terminals kept running.	Yeniden bağlanıldı. Terminaller çalışmaya devam etti.
+Reconnected, but the server session had expired: terminals were closed.	Yeniden bağlanıldı ancak sunucu oturumunun süresi dolmuştu: terminaller kapatıldı.
+Lost the connection to {}: {}. Your open files stay here and unsaved changes are kept, but they cannot be saved until you reconnect (File: Save a Copy to This Computer… keeps one locally).	{0} sunucusuyla bağlantı koptu: {1}. Açık dosyalarınız burada kalır ve kaydedilmemiş değişiklikler korunur, ancak yeniden bağlanana kadar kaydedilemez (Dosya: Bu Bilgisayara Kopya Kaydet… bir kopyayı yerelde saklar).
+Lost the connection to {}: {}. Your open files stay here.	{0} sunucusuyla bağlantı koptu: {1}. Açık dosyalarınız burada kalır.
+Trusted “{}”	“{}” güvenilir olarak işaretlendi
+“{}” can run programs through its tasks, debug configurations and project settings. Only continue if you trust where this folder came from.	“{}” klasörü görevleri, hata ayıklama yapılandırmaları ve proje ayarları aracılığıyla program çalıştırabilir. Yalnızca bu klasörün nereden geldiğine güveniyorsanız devam edin.
+Do you trust the authors of this folder?	Bu klasörün yazarlarına güveniyor musunuz?
+Trust Folder and Continue	Klasöre Güven ve Devam Et
+Open a folder first.	Önce bir klasör açın.
+Passphrase	Anahtar parolası
+Password	Parola
+Response	Yanıt
+Send	Gönder
+Trust this host and connect	Bu sunucuya güven ve bağlan
+Allow	İzin ver
+Deny	Reddet
+# ---- File transfers (upload, download, copy in) ----
+{} item|{} items	{} öğe
+Downloading works with a connected SSH host: connect first (⌃R).	Dosya indirmek için bağlı bir SSH sunucusu gerekir: önce bağlanın (⌃R).
+Uploading works with a connected SSH host: connect first (⌃R).	Dosya yüklemek için bağlı bir SSH sunucusu gerekir: önce bağlanın (⌃R).
+Copying files here works with a connected SSH host: connect first (⌃R).	Dosyaları buraya kopyalamak için bağlı bir SSH sunucusu gerekir: önce bağlanın (⌃R).
+Downloading has to wait: the connection is still being set up.	Dosya indirmek için beklemeniz gerekir: bağlantı hâlâ kuruluyor.
+Uploading has to wait: the connection is still being set up.	Dosya yüklemek için beklemeniz gerekir: bağlantı hâlâ kuruluyor.
+Copying files here has to wait: the connection is still being set up.	Dosyaları buraya kopyalamak için beklemeniz gerekir: bağlantı hâlâ kuruluyor.
+Downloading has to wait: the connection dropped and is reconnecting.	Dosya indirmek için beklemeniz gerekir: bağlantı koptu ve yeniden bağlanılıyor.
+Uploading has to wait: the connection dropped and is reconnecting.	Dosya yüklemek için beklemeniz gerekir: bağlantı koptu ve yeniden bağlanılıyor.
+Copying files here has to wait: the connection dropped and is reconnecting.	Dosyaları buraya kopyalamak için beklemeniz gerekir: bağlantı koptu ve yeniden bağlanılıyor.
+Downloading needs the connection to {}, which failed: use Reconnect first.	Dosya indirmek için {} sunucusuna bağlantı gerekir ancak bağlantı başarısız oldu: önce Yeniden Bağlan'ı kullanın.
+Uploading needs the connection to {}, which failed: use Reconnect first.	Dosya yüklemek için {} sunucusuna bağlantı gerekir ancak bağlantı başarısız oldu: önce Yeniden Bağlan'ı kullanın.
+Copying files here needs the connection to {}, which failed: use Reconnect first.	Dosyaları buraya kopyalamak için {} sunucusuna bağlantı gerekir ancak bağlantı başarısız oldu: önce Yeniden Bağlan'ı kullanın.
+Downloading is not possible in this workspace.	Bu çalışma alanında dosya indirilemez.
+Uploading is not possible in this workspace.	Bu çalışma alanında dosya yüklenemez.
+Copying files here is not possible in this workspace.	Bu çalışma alanında dosyalar buraya kopyalanamaz.
+Download Here	Buraya İndir
+Upload	Yükle
+A transfer is already running. Wait for it to finish or click it in the status bar to cancel.	Zaten bir aktarım sürüyor. Bitmesini bekleyin ya da iptal etmek için durum çubuğunda ona tıklayın.
+A folder named “{}” is already there; a file cannot replace it. Rename or remove it first.	“{}” adlı bir klasör zaten orada; bir dosya onun yerine geçemez. Önce klasörü yeniden adlandırın ya da kaldırın.
+A file named “{}” is already there; a folder cannot replace it. Rename or remove it first.	“{}” adlı bir dosya zaten orada; bir klasör onun yerine geçemez. Önce dosyayı yeniden adlandırın ya da kaldırın.
+“{}” already exists. Replace it?	“{}” zaten var. Değiştirilsin mi?
+{} item already exists. Replace it?|{} items already exist. Replace them?	{} öğe zaten var. Değiştirilsin mi?
+Files with the same name are overwritten; other files in the folder are kept.	Aynı ada sahip dosyaların üzerine yazılır; klasördeki diğer dosyalar korunur.
+Uploaded “{}” ({}) to {}	“{0}” ({1}) {2} konumuna yüklendi
+Uploaded {} item ({}) to {}|Uploaded {} items ({}) to {}	{0} öğe ({1}) {2} konumuna yüklendi
+Downloaded to {} ({})	{0} konumuna indirildi ({1})
+Copied “{}” ({}) to {}	“{0}” ({1}) {2} konumuna kopyalandı
+Copied {} item ({}) to {}|Copied {} items ({}) to {}	{0} öğe ({1}) {2} konumuna kopyalandı
+Transfer cancelled.	Aktarım iptal edildi.
+{} (“{}” failed; {} of {} items were transferred before it)	{0} (“{1}” başarısız oldu; ondan önce {3} öğeden {2} tanesi aktarıldı)
+Transfer failed: {}	Aktarım başarısız: {}
+Cancel “{}”?	“{}” iptal edilsin mi?
+A file that is only partly transferred is removed, and so is a new folder. A folder you merge into keeps what was already copied.	Kısmen aktarılmış dosya silinir, yeni oluşturulan klasör de silinir. İçine birleştirdiğiniz mevcut bir klasör ise o ana kadar kopyalananları korur.
+Cancel Transfer	Aktarımı İptal Et
+Keep Going	Devam Et
+# ---- Port forwarding ----
+Port {} is forwarded: localhost:{}	Bağlantı noktası {0} yönlendirildi: localhost:{1}
+Port {} is forwarded to localhost:{} ({} was busy here)	Bağlantı noktası {0}, localhost:{1} adresine yönlendirildi ({2} burada meşguldü)
+Could not forward port {}: {}	Bağlantı noktası {0} yönlendirilemedi: {1}
+Port forwarding works while connected to an SSH host.	Bağlantı noktası yönlendirme, bir SSH sunucusuna bağlıyken çalışır.
+Open in Browser	Tarayıcıda Aç
+Stop	Durdur
+listening on the server	sunucuda dinliyor
+Nothing is listening on the server yet.	Sunucuda henüz dinleyen bir şey yok.
+Forward a port:	Bağlantı noktası yönlendir:
+Forward Port	Yönlendir
+e.g. 3000	örn. 3000
+# ---- Debugger: panel, start, breakpoints, watches, exceptions, messages ----
+Could not run “{}”: {}	“{0}” çalıştırılamadı: {1}
+Build failed: {}	Derleme başarısız: {}
+Could not start the debug adapter: {}	Hata ayıklama bağdaştırıcısı başlatılamadı: {}
+Set	Ayarla
+condition  ·  log: message with {expr}  ·  hit: 5  ·  empty: plain breakpoint	koşul  ·  log: {expr} içeren günlük iletisi  ·  hit: 5  ·  boş: düz kesme noktası
+The JavaScript debugger is already installed.	JavaScript hata ayıklayıcısı zaten kurulu.
+Downloading Microsoft's js-debug (about 1.2 MB)…	Microsoft'un js-debug aracı indiriliyor (yaklaşık 1,2 MB)…
+JavaScript debugger installed: F5 now works for Node.	JavaScript hata ayıklayıcısı kuruldu: F5 artık Node için çalışıyor.
+The download finished but js-debug was not found in it.	İndirme bitti ancak içinde js-debug bulunamadı.
+Could not download js-debug: {}	js-debug indirilemedi: {}
+Start a debug session first (F5): the adapter says which exceptions it can break on.	Önce bir hata ayıklama oturumu başlatın (F5): bağdaştırıcı hangi istisnalarda durabileceğini bildirir.
+This debug adapter has no exception breakpoints.	Bu hata ayıklama bağdaştırıcısında istisna kesme noktası yok.
+Toggle a break-on-exception filter	İstisnada durma süzgecini aç/kapat
+Not breaking on exceptions.	İstisnalarda durulmuyor.
+Breaking on: {}	Şu istisnalarda duruluyor: {}
+Pause the program first (a breakpoint or ⏸): the variable has to be in scope.	Önce programı duraklatın (bir kesme noktası ya da ⏸): değişken kapsamda olmalıdır.
+Watch	İzle
+variable name, e.g. total (the program stops when it is written)	değişken adı, örn. total (değişkene yazıldığında program durur)
+This debug adapter does not support data breakpoints.	Bu hata ayıklama bağdaştırıcısı veri kesme noktalarını desteklemiyor.
+Data breakpoint set: the program stops when {} is written.	Veri kesme noktası ayarlandı: {} yazıldığında program durur.
+Data breakpoint: {}	Veri kesme noktası: {}
+expression to watch (e.g. total * 2, items.len())	izlenecek ifade (örn. total * 2, items.len())
+not available	kullanılamıyor
+Already debugging: Shift+F5 stops the session.	Zaten hata ayıklanıyor: Shift+F5 oturumu durdurur.
+Open a folder to debug it.	Hata ayıklamak için bir klasör açın.
+No debug configuration: add .vscode/launch.json, or open a Cargo / Go project or a Python file.	Hata ayıklama yapılandırması yok: .vscode/launch.json ekleyin ya da bir Cargo / Go projesi veya Python dosyası açın.
+Select a debug configuration	Bir hata ayıklama yapılandırması seçin
+Evaluate an expression (↵)	Bir ifadeyi değerlendirin (↵)
+Starting “{}”…	“{}” başlatılıyor…
+Could not start debugging: {}	Hata ayıklama başlatılamadı: {}
+Paused on exception: {}	İstisnada duraklatıldı: {}
+Process exited with code {}	Süreç {} koduyla çıktı
+The program finished without stopping at any breakpoint. The debugger matches breakpoints to the debug info by file path: build with debug info (-g) from this folder, and check that the breakpoint is on a line with code.	Program hiçbir kesme noktasında durmadan bitti. Hata ayıklayıcı kesme noktalarını dosya yoluna göre hata ayıklama bilgisiyle eşleştirir: bu klasörden hata ayıklama bilgisiyle (-g) derleyin ve kesme noktasının kod içeren bir satırda olduğunu denetleyin.
+Debug session ended	Hata ayıklama oturumu bitti
+The debug adapter stopped (exit code {})	Hata ayıklama bağdaştırıcısı durdu (çıkış kodu {})
+The debug adapter stopped	Hata ayıklama bağdaştırıcısı durdu
+No active debug session.	Etkin hata ayıklama oturumu yok.
+Debug session stopped	Hata ayıklama oturumu durduruldu
+No debug session. F5 starts one.	Hata ayıklama oturumu yok. F5 bir oturum başlatır.
+Pause	Duraklat
+Continue (F5)	Devam Et (F5)
+Step Over (F10)	Üzerinden Geç (F10)
+Step Into (F11)	İçine Gir (F11)
+Step Out (⇧F11)	Dışına Çık (⇧F11)
+Restart (⇧⌘F5)	Yeniden Başlat (⇧⌘F5)
+Stop (⇧F5)	Durdur (⇧F5)
+{}: starting…	{}: başlıyor…
+{}: running	{}: çalışıyor
+{}: paused ({})	{0}: duraklatıldı ({1})
+Running…	Çalışıyor…
+Not paused	Duraklatılmadı
+not paused	duraklatılmadı
+breaks when written:	yazıldığında durur:
+Call Stack	Çağrı Yığını
+Variables	Değişkenler
+Debug Console	Hata Ayıklama Konsolu
+breakpoint	kesme noktası
+step	adım
+pause	duraklatma
+exception	istisna
+entry	giriş
+goto	git
+function breakpoint	işlev kesme noktası
+data breakpoint	veri kesme noktası
+instruction breakpoint	komut kesme noktası
+# ---- Debug adapter (dap.rs) errors ----
+Could not forward the debug port over SSH: {}	Hata ayıklama bağlantı noktası SSH üzerinden yönlendirilemedi: {}
+The debug adapter exited before it started listening	Hata ayıklama bağdaştırıcısı dinlemeye başlamadan çıktı
+The debug adapter did not start listening	Hata ayıklama bağdaştırıcısı dinlemeye başlamadı
+The debug adapter exited before connecting	Hata ayıklama bağdaştırıcısı bağlanmadan çıktı
+The debug adapter did not accept a connection	Hata ayıklama bağdaştırıcısı bağlantı kabul etmedi
+{}:{}: no address	{0}:{1}: adres yok
+Nothing is listening on {0}:{1} (start the program with its debug server first, e.g. `python -m debugpy --listen {1} --wait-for-client app.py`).	{0}:{1} adresinde dinleyen yok (önce programı hata ayıklama sunucusuyla başlatın, örn. `python -m debugpy --listen {1} --wait-for-client app.py`).
+the debug adapter stopped	hata ayıklama bağdaştırıcısı durdu
+the debug adapter is not running	hata ayıklama bağdaştırıcısı çalışmıyor
+{}: no answer from the debug adapter	{}: hata ayıklama bağdaştırıcısından yanıt yok
+the debug adapter did not report that it is ready	hata ayıklama bağdaştırıcısı hazır olduğunu bildirmedi
+the debug adapter stopped while starting	hata ayıklama bağdaştırıcısı başlarken durdu
+{}: the program did not start	{}: program başlamadı
+Could not open the debug session: {}	Hata ayıklama oturumu açılamadı: {}
+Could not start the debug session: {}	Hata ayıklama oturumu başlatılamadı: {}
+this value cannot be watched	bu değer izlenemez
+the debugger could not set the data breakpoint	hata ayıklayıcı veri kesme noktasını ayarlayamadı
+request failed	istek başarısız oldu
+# ---- Debug configurations (debug_config.rs) ----
+the checksum does not match: the download is incomplete or was altered	sağlama toplamı eşleşmiyor: indirme eksik ya da değiştirilmiş
+the archive does not contain js-debug/src/dapDebugServer.js	arşiv js-debug/src/dapDebugServer.js dosyasını içermiyor
+JavaScript debugging needs Microsoft's js-debug adapter: run “Debug: Install JavaScript Debugger” (a one-time download, MIT licensed), or install VS Code (its copy is used).	JavaScript hata ayıklaması için Microsoft'un js-debug bağdaştırıcısı gerekir: “Hata Ayıklama: JavaScript Hata Ayıklayıcısını Kur” komutunu çalıştırın (tek seferlik indirme, MIT lisanslı) ya da VS Code'u kurun (onun kopyası kullanılır).
+No debug adapter for type “{0}”. Supported: lldb (C, C++, Rust, Swift), go, python; or add {1} to the configuration.	“{0}” türü için hata ayıklama bağdaştırıcısı yok. Desteklenenler: lldb (C, C++, Rust, Swift), go, python; ya da yapılandırmaya {1} ekleyin.
+Debug Rust: {}	Rust Hata Ayıklama: {}
+Debug Go package	Go Paketi Hata Ayıklama
+Debug Node: {}	Node Hata Ayıklama: {}
+Debug Python: {}	Python Hata Ayıklama: {}
+# ---- .http client: dialogs, notices, explanations (curl's own output stays as an argument) ----
+Open a .http or .rest file to send requests.	İstek göndermek için bir .http ya da .rest dosyası açın.
+There is no request here. Write METHOD URL on a line, separate requests with ###.	Burada istek yok. Bir satıra YÖNTEM URL yazın, istekleri ### ile ayırın.
+sends {} to {}	{1} adresine {0} gönderiyor
+goes to {}, which you have not sent anything to in this session	{} adresine gidiyor; bu oturumda ona henüz bir şey göndermediniz
+goes to an address whose host cannot be read reliably	sunucu adı güvenilir biçimde okunamayan bir adrese gidiyor
+{} contains a request that:	{} şu özelliklere sahip bir istek içeriyor:
+Only send it if you trust this file.	Yalnızca bu dosyaya güveniyorsanız gönderin.
+Send this request?	Bu istek gönderilsin mi?
+A request is still being sent; wait for its answer first.	Bir istek hâlâ gönderiliyor; önce yanıtını bekleyin.
+Sending {} {}…	{0} {1} gönderiliyor…
+could not read {}: {}	{0} okunamadı: {1}
+this computer	bu bilgisayar
+could not run curl on {}: {}	{0} üzerinde curl çalıştırılamadı: {1}
+curl is not installed on {0}; install it or set http.runOn to {1}	{0} üzerinde curl kurulu değil; kurun ya da http.runOn ayarını {1} yapın
+binary content, first {} shown as hex	ikili içerik, ilk {} onaltılık olarak gösteriliyor
+binary content shown as hex	ikili içerik onaltılık olarak gösteriliyor
+empty body	boş gövde
+Send a request first.	Önce bir istek gönderin.
+the response body is not JSON	yanıt gövdesi JSON değil
+no “{}” in the response	yanıtta “{}” yok
+unclosed [ in the path	yolda kapatılmamış [ var
+bad array index	geçersiz dizi dizini
+no item {} in the response	yanıtta {} numaralı öğe yok
+cannot read “{}” in the path	yolda “{}” okunamıyor
+{{$processEnv}} needs a name	{{$processEnv}} bir ad gerektirir
+the environment variable {} is not set	{} ortam değişkeni ayarlanmamış
+unknown variable {}	bilinmeyen değişken {}
+empty variable	boş değişken
+send the request named “{}” first	önce “{}” adlı isteği gönderin
+the response of “{}” has no header {}	“{0}” yanıtında {1} üstbilgisi yok
+cannot read “{}” of the response	yanıtın “{}” bölümü okunamıyor
+the variable {} refers to itself	{} değişkeni kendine başvuruyor
+undefined variable {}	tanımsız değişken {}
+“{}” is not a valid http(s) address	“{}” geçerli bir http(s) adresi değil
+the header “{}” is not valid	“{}” üstbilgisi geçerli değil
+decoded as {}	{} olarak çözüldü
+curl returned no response headers	curl yanıt üstbilgisi döndürmedi
+“localhost” means {0}: for a service on your own computer set http.runOn to {1}.	“localhost” {0} anlamına gelir: kendi bilgisayarınızdaki bir hizmet için http.runOn ayarını {1} yapın.
+The address is malformed: {}	Adres hatalı biçimlendirilmiş: {}
+Could not resolve “{}”: check the spelling and the network (the request ran on {}).	“{0}” çözümlenemedi: yazımı ve ağı denetleyin (istek {1} üzerinde çalıştı).
+Could not connect to {}: nothing is listening there, or a firewall blocks it (the request ran on {}).	{0} sunucusuna bağlanılamadı: orada dinleyen yok ya da bir güvenlik duvarı engelliyor (istek {1} üzerinde çalıştı).
+The server did not answer within 60 seconds.	Sunucu 60 saniye içinde yanıt vermedi.
+The TLS/SSL handshake with {} failed (certificate or protocol problem): {}	{0} ile TLS/SSL el sıkışması başarısız oldu (sertifika ya da protokol sorunu): {1}
+Too many redirects (more than 10): the server keeps redirecting.	Çok fazla yönlendirme (10'dan fazla): sunucu sürekli yönlendiriyor.
+{} accepted the connection but sent no reply.	{} bağlantıyı kabul etti ancak yanıt göndermedi.
+The connection to {} dropped while the data was being exchanged.	{} ile bağlantı, veri alışverişi sürerken koptu.
+The response is larger than {} and was not downloaded.	Yanıt {} boyutundan büyük; indirilmedi.
+The response could not be saved (curl write error).	Yanıt kaydedilemedi (curl yazma hatası).
+{} (curl exit {})	{0} (curl çıkış kodu {1})
+The request failed.	İstek başarısız oldu.
+reads environment variables from this computer ({{$processEnv}})	bu bilgisayardaki ortam değişkenlerini okuyor ({{$processEnv}})
+uploads a file whose name comes from a variable ({})	adı bir değişkenden gelen bir dosyayı yüklüyor ({})
+uploads {}, which is outside this file's folder	{} dosyasını yüklüyor; dosya, bu isteğin bulunduğu dosyanın klasörünün dışında
+# ---- GitHub pull requests ----
+unexpected gh output: {}	beklenmeyen gh çıktısı: {}
+unexpected gh output	beklenmeyen gh çıktısı
+unexpected GitHub response: {}	beklenmeyen GitHub yanıtı: {}
+unexpected GitHub response	beklenmeyen GitHub yanıtı
+`{}` is not installed or not on PATH	`{}` kurulu değil ya da PATH içinde değil
+`{}` did not answer within {} seconds; check the network connection and try again	`{0}` {1} saniye içinde yanıt vermedi; ağ bağlantısını denetleyip yeniden deneyin
+{} exited with {}	{0} şu durumla çıktı: {1}
+git failed	git başarısız oldu
+Pull request #{} has no head on {} (it may have been closed or deleted); refresh the list	#{0} numaralı pull request'in dalı {1} üzerinde bulunamadı (kapatılmış ya da silinmiş olabilir); listeyi yenileyin
+Cannot check out #{}: you have uncommitted changes that would be overwritten. Commit or stash them, then try again	#{} checkout edilemiyor: üzerine yazılacak, commit edilmemiş değişiklikleriniz var. Bunları commit edin ya da stash'leyin, sonra yeniden deneyin
+Git could not sign in to {}. Set up credentials (credential helper, SSH key or `gh auth login`) and try again	Git, {} sunucusunda oturum açamadı. Kimlik bilgilerini ayarlayın (kimlik bilgisi yardımcısı, SSH anahtarı ya da `gh auth login`) ve yeniden deneyin
+Could not reach {}: check the network connection and try again	{} sunucusuna erişilemedi: ağ bağlantısını denetleyip yeniden deneyin
+The remote “{}” is not reachable as a git repository (it may be private or renamed); check `git remote -v`	“{}” uzak deposuna git deposu olarak erişilemiyor (özel olabilir ya da adı değişmiş olabilir); `git remote -v` komutunu denetleyin
+the token was rejected: it may be expired or revoked — renew GITHUB_TOKEN/GH_TOKEN or run `gh auth login`	belirteç reddedildi: süresi dolmuş ya da iptal edilmiş olabilir — GITHUB_TOKEN/GH_TOKEN değerini yenileyin ya da `gh auth login` çalıştırın
+the repository may be private: sign in with `gh auth login` or set GITHUB_TOKEN	depo özel olabilir: `gh auth login` ile oturum açın ya da GITHUB_TOKEN ayarlayın
+GitHub's rate limit for anonymous requests: sign in with `gh auth login` or set GITHUB_TOKEN	GitHub'ın anonim istekler için hız sınırı: `gh auth login` ile oturum açın ya da GITHUB_TOKEN ayarlayın
+… {} running	… {} çalışıyor
+✗ {} failed	✗ {} başarısız
+approved	onaylandı
+changes requested	değişiklik istendi
+review needed	inceleme gerekli
+draft	taslak
+Loading pull requests…	Pull request'ler yükleniyor…
+None of this repository's remotes is on github.com.	Bu deponun uzak depolarından hiçbiri github.com üzerinde değil.
+{}: no open pull requests.	{}: açık pull request yok.
+via the gh CLI	gh CLI ile
+via the GitHub API	GitHub API ile
+via the public GitHub API (set GITHUB_TOKEN or use gh for private repositories and check results)	herkese açık GitHub API ile (özel depolar ve kontrol sonuçları için GITHUB_TOKEN ayarlayın ya da gh kullanın)
+latest {} open	son {} açık
+{} open	{} açık
+Pull requests	Pull request'ler
+could not load pull requests	pull request'ler yüklenemedi
+Check out #{} as pr-{}	#{0} pr-{1} olarak checkout et
+fetches {} from {}	{1} üzerinden {0} alır
+Open on GitHub	GitHub'da Aç
+Copy link	Bağlantıyı kopyala
+Copy branch name	Dal adını kopyala
+Choose an action	Bir eylem seçin
+Link copied.	Bağlantı kopyalandı.
+Copied {}.	{} kopyalandı.
+Checking out pull request #{}…	#{} numaralı pull request checkout ediliyor…
+Checked out #{} as pr-{}	#{0}, pr-{1} olarak checkout edildi
+# ---- Git: Pull / Push / Fetch progress and results, history and blame (Pull, Push, Fetch, Stash stay Git terms) ----
+{} (saved {}) ↔ editor	{0} (kaydedilme: {1}) ↔ düzenleyici
+Local history	Yerel geçmiş
+Could not read the saved copy: {}	Kaydedilen kopya okunamadı: {}
+Line {}: not committed yet	{} numaralı satır: henüz commit edilmedi
+Line {}: {} · {}, {} · {}	{0} numaralı satır: {1} · {2}, {3} · {4}
+Could not blame: {}	Blame okunamadı: {}
+Pulling…	Pull ediliyor…
+Pushing…	Push ediliyor…
+Fetching…	Fetch ediliyor…
+Pulling, Pushing…	Pull ediliyor, Push ediliyor…
+Syncing…	Eşitleniyor…
+Pulled	Pull edildi
+Pushed	Push edildi
+Fetched	Fetch edildi
+Synced	Eşitlendi
+The server wants credentials: run the command once in the terminal (or set up an SSH key).	Sunucu kimlik bilgisi istiyor: komutu bir kez terminalde çalıştırın (ya da bir SSH anahtarı kurun).
+Pull failed: {}	Pull başarısız: {}
+Push failed: {}	Push başarısız: {}
+Fetch failed: {}	Fetch başarısız: {}
+just now	az önce
+{} minute ago|{} minutes ago	{} dakika önce
+{} hour ago|{} hours ago	{} saat önce
+{} day ago|{} days ago	{} gün önce
+{} week ago|{} weeks ago	{} hafta önce
+{} month ago|{} months ago	{} ay önce
+{} year ago|{} years ago	{} yıl önce
+# ---- git.rs explanations and errors ----
+git is not installed on this host	git bu sunucuda kurulu değil
+git {} failed	git {} başarısız oldu
+Git doesn't know who you are on this host. Run these in the terminal: {0} and {1}	Git bu sunucuda kim olduğunuzu bilmiyor. Terminalde şunları çalıştırın: {0} ve {1}
+git commit failed	git commit başarısız oldu
+There is no commit to undo	Geri alınacak commit yok
+There are no local changes to stash	Stash'lenecek yerel değişiklik yok
+git blame gave no answer	git blame yanıt vermedi
+A rebase is already in progress: use Git: Continue Rebase or Git: Abort Rebase	Zaten bir rebase sürüyor: Git: Rebase'e Devam Et ya da Git: Rebase'i İptal Et komutunu kullanın
+unexpected output: {}	beklenmeyen çıktı: {}
+This repository has no remote. Add one with Git: Add Remote…	Bu deponun uzak deposu yok. Git: Uzak Depo Ekle… komutuyla bir tane ekleyin.
+This file has merge conflicts: resolve them first (Source Control marks it resolved when staged)	Bu dosyada birleştirme çakışmaları var: önce bunları çözün (Kaynak Denetimi, stage'e alınınca dosyayı çözülmüş sayar)
+Staging changes inside a symlink or submodule is not supported	Sembolik bağ ya da alt modül içindeki değişiklikleri stage'e almak desteklenmiyor
+Staging changes needs a UTF-8 file (this one is stored in another encoding)	Değişiklikleri stage'e almak için UTF-8 bir dosya gerekir (bu dosya başka bir kodlamayla saklanıyor)
+Staging changes is not supported in files with old-Mac (CR only) line endings	Değişiklikleri stage'e almak, eski Mac (yalnızca CR) satır sonlarına sahip dosyalarda desteklenmiyor
+# ---- About dialog and macOS Full Disk Access prompt ----
+Version {}	Sürüm {}
+A small, fast, native code editor for local folders and remote servers over SSH.	Yerel klasörler ve SSH üzerinden uzak sunucular için küçük, hızlı, yerel bir kod düzenleyici.
+Rust and GPUI. No Electron, no telemetry.	Rust ve GPUI. Electron yok, telemetri yok.
+Copy Version	Sürümü Kopyala
+Allow file access	Dosya erişimine izin verin
+Without Full Disk Access, Desktop, Documents or external drives may look empty.	Tam Disk Erişimi olmadan Masaüstü, Belgeler ya da harici sürücüler boş görünebilir.
+Turn Codeyard on in Privacy & Security.	Gizlilik ve Güvenlik bölümünde Codeyard'ı açın.
+Open System Settings	Sistem Ayarları'nı Aç
+# ---- settings.jsonc / keybindings.jsonc warnings (file names and JSON samples stay as they are) ----
+{} (previous settings kept)	{} (önceki ayarlar korundu)
+expected an object { … } (previous settings kept)	{ … } biçiminde bir nesne bekleniyordu (önceki ayarlar korundu)
+{}: “{}” can only be set in your own settings.jsonc	{0}: “{1}” yalnızca kendi settings.jsonc dosyanızda ayarlanabilir
+{}: “{}” is ignored until you trust this folder (Workspace: Trust This Folder)	{0}: “{1}” bu klasöre güvenene kadar yok sayılır (Çalışma Alanı: Bu Klasöre Güven)
+{}: expected an object { … }	{}: { … } biçiminde bir nesne bekleniyordu
+files.autoSave: unknown value {} (off, afterDelay, onFocusChange)	files.autoSave: bilinmeyen değer {} (off, afterDelay, onFocusChange)
+files.associations.{}: expected a language name or extension	files.associations.{}: bir dil adı ya da uzantı bekleniyordu
+{0}: expected an object {1}	{0}: {1} gibi bir nesne bekleniyordu
+workbench.colorCustomizations: unknown color role {0} (see crates/theme/design/tokens.json: {1})	workbench.colorCustomizations: bilinmeyen renk rolü {0} (bkz. crates/theme/design/tokens.json: {1})
+{0}: expected a color like {1}	{0}: {1} gibi bir renk bekleniyordu
+{}: expected an object	{}: bir nesne bekleniyordu
+{0}: expected {1} or null	{0}: {1} ya da null bekleniyordu
+{0}: expected dictionary names like {1}	{0}: {1} gibi sözlük adları bekleniyordu
+{0}: expected an array like {1}	{0}: {1} gibi bir dizi bekleniyordu
+{0}: each entry needs {1} and {2}	{0}: her girdide {1} ve {2} bulunmalıdır
+{0}: expected an array of {1}	{0}: {1} öğelerinden oluşan bir dizi bekleniyordu
+{}: expected a file pattern or a list of patterns	{}: bir dosya deseni ya da desen listesi bekleniyordu
+unknown setting {}	bilinmeyen ayar {}
+{}: expected text	{}: metin bekleniyordu
+{}: expected true or false	{}: true ya da false bekleniyordu
+{}: {} is out of range ({}–{})	{0}: {1} aralığın dışında ({2}–{3})
+{}: expected a number	{}: sayı bekleniyordu
+{}: unknown value {} ({})	{0}: bilinmeyen değer {1} ({2})
+{}: expected a list of numbers ({}–{})	{0}: sayı listesi bekleniyordu ({1}–{2})
+{0}: expected {1} or a list of kinds	{0}: {1} ya da tür listesi bekleniyordu
+{}: expected a list of text	{}: metin listesi bekleniyordu
+expected a list [ … ]	[ … ] biçiminde bir liste bekleniyordu
+entry {0} needs {1} and {2}	{0}. girdide {1} ve {2} bulunmalıdır
+theme “{}” not found (available: auto, {})	“{0}” teması bulunamadı (kullanılabilir: auto, {1})
+# ---- JSON/YAML schema notices, trash helper ----
+A file you opened names a schema that is hosted on {}. Downloading it sends a request to that server (your IP address and the schema's address). Only allow it if you trust the file and the host.	Açtığınız bir dosya, {} üzerinde barındırılan bir şemayı adlandırıyor. Şemayı indirmek o sunucuya bir istek gönderir (IP adresiniz ve şemanın adresi). Yalnızca dosyaya ve sunucuya güveniyorsanız izin verin.
+Download a schema from {}?	{} sunucusundan bir şema indirilsin mi?
+Download	İndir
+Schema cache cleared. Schemas are downloaded again when needed.	Şema önbelleği temizlendi. Şemalar gerektiğinde yeniden indirilir.
+no file name	dosya adı yok
+HOME is not set	HOME ayarlı değil
+# ---- VS Code import, session restore ----
+VS Code settings.json could not be read	VS Code settings.json okunamadı
+theme {} isn't installed here: copy its .json into ~/.config/codeyard/themes to use it	{} teması burada kurulu değil: kullanmak için .json dosyasını ~/.config/codeyard/themes içine kopyalayın
+no configuration directory	yapılandırma klasörü yok
+Imported {0} settings and {1} shortcuts from VS Code ({2} settings and {3} shortcuts have no equivalent here)	VS Code'dan {0} ayar ve {1} kısayol içe aktarıldı ({2} ayarın ve {3} kısayolun burada karşılığı yok)
+{} no longer exists, so it was not reopened.	{} artık yok, bu yüzden yeniden açılmadı.
+# ---- Compare, scratch files, snippets, user themes (workbench_extras) ----
+The clipboard has no text.	Panoda metin yok.
+{} ↔ Clipboard	{} ↔ Pano
+No unsaved changes: the file matches what is on disk.	Kaydedilmemiş değişiklik yok: dosya diskteki haliyle aynı.
+{0} (saved) ↔ {1} (editor)	{0} (kaydedilen) ↔ {1} (düzenleyici)
+Could not read {}: {}	{0} okunamadı: {1}
+Nothing to run: select some text or put the cursor on a line.	Çalıştırılacak bir şey yok: biraz metin seçin ya da imleci bir satıra koyun.
+No edits yet in this session.	Bu oturumda henüz düzenleme yok.
+Save theme	Temayı kaydet
+Name of the new theme (it joins the theme list)	Yeni temanın adı (tema listesine eklenir)
+Give the theme a name.	Temaya bir ad verin.
+Saved {} (edit the colors in that file)	{} kaydedildi (renkleri o dosyada düzenleyin)
+Could not write {}: {}	{0} yazılamadı: {1}
+Themes live in {}: drop VS Code or native theme .json files there	Temalar {} içinde durur: VS Code ya da yerel tema .json dosyalarını oraya bırakın
+Snippets reloaded	Kod parçacıkları yeniden yüklendi
+user	kullanıcı
+Insert a snippet (or type its prefix in the editor and press Tab)	Bir kod parçacığı ekleyin (ya da düzenleyicide önekini yazıp Tab'a basın)
+Could not create {}: {}	{0} oluşturulamadı: {1}
+Create scratch file	Taslak dosya oluştur
+Name with an extension: the extension picks the language (scratch.md, notes.json…)	Uzantılı bir ad girin: uzantı dili belirler (scratch.md, notes.json…)
+Could not read the file: {}	Dosya okunamadı: {}
+Could not create the scratch file: {}	Taslak dosya oluşturulamadı: {}
+
+# ======== Diff view and reconnect banner (found by the untranslated-literal scan) ========
+HEAD ↔ Staged	HEAD ↔ Stage'deki
+Index ↔ Working Tree	Stage ↔ Çalışma Ağacı
+Inline	Satır İçi
+Side by side	Yan Yana
+Toggle inline view	Satır içi görünümü aç/kapat
+No changes	Değişiklik yok
+Reconnect	Yeniden Bağlan
+No settings folder on this machine.	Bu bilgisayarda ayar klasörü yok.

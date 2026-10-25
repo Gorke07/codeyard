@@ -1,0 +1,128 @@
+name: release
+# Push a tag like v0.1.0 to build and publish a GitHub release.
+# The release notes are the matching section of CHANGELOG.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag, Cargo version and changelog agree
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          CARGO=$(cargo metadata --no-deps --format-version 1 | python3 -c \
+            'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="app"))')
+          [ "$VERSION" = "$CARGO" ] || { echo "tag $VERSION != Cargo version $CARGO"; exit 1; }
+          grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "CHANGELOG.md has no [$VERSION] section"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - run: brew install zig
+      - name: Metal toolchain (GPUI shaders)
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      # SSH agents: copied to the server on first connect, so they ship inside the app.
+      - name: Build agents
+        run: |
+          mkdir agents
+          for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            cargo zigbuild --profile release-agent -p agent --target "$t"
+            cp "target/$t/release-agent/codeyard-agent" "agents/codeyard-agent-$t"
+          done
+          cargo build --profile release-agent -p agent
+          cp target/release-agent/codeyard-agent agents/codeyard-agent-aarch64-apple-darwin
+
+      - name: Build app, bundle and DMG
+        run: AGENTS_DIR="$PWD/agents" scripts/bundle-macos.sh
+
+      - name: Share SSH agents with Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-agents
+          path: agents/
+          if-no-files-found: error
+
+      - name: Collect release files
+        run: |
+          mkdir dist
+          NAME="codeyard-$VERSION-macos-arm64"
+          cp target/release/Codeyard.dmg "dist/Codeyard-$VERSION-macos-arm64.dmg"
+          # Single runnable binary (agents are looked up in an agents/ folder next to it).
+          mkdir "$NAME"
+          cp target/release/codeyard "$NAME/"
+          cp -R agents "$NAME/agents"
+          scripts/licenses.sh copy "$NAME/licenses"
+          tar -czf "dist/$NAME.tar.gz" "$NAME"
+          (cd dist && shasum -a 256 * > SHA256SUMS.txt)
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on=1; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]+\]: / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          cat >> notes.md <<'NOTES'
+
+          ### Install
+          Open the DMG and drag **Codeyard** to Applications. This build is not notarized yet:
+          on first launch right-click the app, choose **Open**, then **Open** again
+          (or run `xattr -cr /Applications/Codeyard.app`).
+
+          Windows: extract the Windows ZIP or run the Windows setup EXE.
+          Windows builds are unsigned and may show a SmartScreen warning.
+          NOTES
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "v$VERSION" --notes-file notes.md --verify-tag
+
+  windows:
+    needs: macos
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Download SSH agents
+        uses: actions/download-artifact@v4
+        with:
+          name: release-agents
+          path: agents
+      - name: Build Windows ZIP and installer
+        run: |
+          $env:AGENTS_DIR = (Resolve-Path agents).Path
+          ./scripts/bundle-windows.ps1
+          if (-not (Get-ChildItem target/windows/*-setup.exe)) {
+            throw 'Windows installer was not generated'
+          }
+      - name: Publish Windows release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = @(Get-ChildItem target/windows/*.zip, target/windows/*-setup.exe)
+          $checksums = $files | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $sumFile = 'target/windows/SHA256SUMS-windows.txt'
+          $checksums | Set-Content -Encoding ascii $sumFile
+          gh release upload $env:GITHUB_REF_NAME @($files.FullName) $sumFile
+          if ($LASTEXITCODE -ne 0) { throw 'Windows release upload failed' }

@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/doancan/codeyard"
+
+# Full debug info made every test binary hundreds of MB (target/debug reached 24 GB).
+# Line tables are enough for backtraces.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
+
+# Remote agent: this binary is copied to servers, so size matters.
+[profile.release-agent]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+# Patched GPUI: see vendor/gpui/PATCHES.md
+[patch.crates-io]
+# Local patch for Linux builds (libc::ENOATTR does not exist there): see vendor/xattr/src/sys/mod.rs
+xattr = { path = "vendor/xattr" }
+gpui = { path = "vendor/gpui" }

@@ -1,0 +1,22 @@
+[package]
+name = "agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Codeyard remote agent: file system, search, watch, terminals and processes over stdio"
+repository.workspace = true
+publish = false
+
+[dependencies]
+ignore = "0.4.33"
+libc = "0.2.191"
+proto = { version = "0.1.0", path = "../proto" }
+regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
+
+[target.'cfg(windows)'.dependencies]
+portable-pty = "0.9.0"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Pipes", "Win32_Storage_FileSystem"] }
+
+[[bin]]
+name = "codeyard-agent"
+path = "src/main.rs"
