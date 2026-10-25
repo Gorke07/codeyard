@@ -64,7 +64,8 @@ pub(crate) fn desktop_menus(recent: &[state::RecentWorkspace]) -> Vec<Menu> {
     menus
 }
 
-/// Rows of the Dock menu (platform-independent: tests read them too).
+/// Rows of the Dock menu. Built on every platform for the tests; only macOS has a Dock to show it.
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn dock_items(recent: &[state::RecentWorkspace]) -> Vec<MenuItem> {
     use MenuItem as I;
     let mut items = vec![
