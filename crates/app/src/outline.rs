@@ -254,6 +254,6 @@ mod hardening {
         let long = format!("fn {}", "a".repeat(100_000));
         let started = std::time::Instant::now();
         assert!(extract("a.rs", &[long]).unwrap().is_empty());
-        assert!(started.elapsed().as_millis() < 500);
+        assert!(started.elapsed().as_millis() < 500 * u128::from(crate::test_sshd::timeout_scale()));
     }
 }

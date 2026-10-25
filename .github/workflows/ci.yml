@@ -33,9 +33,12 @@ jobs:
       # Our crates only: the patched copies under vendor/ are not linted.
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # macOS runners ship sshd: a skipped SSH test is a failure here, not a silent pass.
+      # The scale only loosens the wall-clock budgets of the tests (debug builds on shared runners are several times
+      # slower than a laptop); a quadratic blow-up still fails them.
       - run: cargo test --workspace
         env:
           CODEYARD_REQUIRE_SSHD: "1"
+          CODEYARD_TEST_TIMEOUT_SCALE: "3"
       # What this step guards: the app binary size, the agent sizes and the idle agent daemon's memory do not depend
       # on the display, so they are enforced exactly. The window rows (terminal, welcome, files) are budgeted for
       # Retina and the runner has a 1x display, so they only catch gross regressions (they measure lower here).
@@ -143,9 +146,12 @@ jobs:
             build-essential pkg-config git openssh-server \
             libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
             libfontconfig-dev libfreetype-dev libwayland-dev libvulkan-dev
+      # The scale only loosens the wall-clock budgets of the tests (debug builds on shared runners are several times
+      # slower than a laptop); a quadratic blow-up still fails them.
       - run: cargo test --workspace
         env:
           CODEYARD_REQUIRE_SSHD: "1"
+          CODEYARD_TEST_TIMEOUT_SCALE: "3"
       - name: Report experimental failure
         if: failure()
         run: |

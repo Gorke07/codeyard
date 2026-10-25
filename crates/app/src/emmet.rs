@@ -687,7 +687,7 @@ mod tests {
         }
         // A reasonable size still works.
         assert!(expand_html("ul>li*20>a", false).is_some());
-        assert!(t.elapsed().as_millis() < 500, "{:?}", t.elapsed());
+        assert!(t.elapsed().as_millis() < 500 * u128::from(crate::test_sshd::timeout_scale()), "{:?}", t.elapsed());
     }
 
     #[test]

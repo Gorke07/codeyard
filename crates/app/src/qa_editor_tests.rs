@@ -814,7 +814,7 @@ fn qa_very_long_single_line(cx: &mut TestAppContext) {
     let ms = t.elapsed().as_millis();
     eprintln!("QA long line: end + 20 chars + home = {ms} ms");
     assert_eq!(ed.read_with(cx, |e, _| e.cursor_position()), (1, 1));
-    assert!(ms < 3000, "{ms} ms");
+    assert!(ms < 3000 * u128::from(crate::test_sshd::timeout_scale()), "{ms} ms");
 }
 
 // ---------------------------------------------------------------- performance (50k lines)

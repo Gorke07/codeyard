@@ -21,6 +21,28 @@ fn conn(wb: &gpui::Entity<Workbench>, cx: &mut VisualTestContext) -> String {
     wb.read_with(cx, |w, _| w.conn_for_test())
 }
 
+/// Process ids of the server-side bridge processes (`agent --attach`) of this fixture's sshd.
+fn bridge_pids(sshd: &crate::test_sshd::Sshd) -> Vec<String> {
+    let pattern = format!("{}/remote/agent.*--attach", sshd.dir.display());
+    let out = std::process::Command::new("pgrep").arg("-f").arg(pattern).output().map(|o| o.stdout).unwrap_or_default();
+    String::from_utf8_lossy(&out).split_whitespace().map(String::from).collect()
+}
+
+/// Kills the bridge and waits until the app is connected again through a new one. The "Reconnected" notice cannot be
+/// the signal: anything that reports right after it (a language server that is not installed) replaces it, and on a
+/// slow runner the poll never sees it.
+fn drop_the_bridge_and_wait_for_the_reconnect(wb: &gpui::Entity<Workbench>, cx: &mut VisualTestContext, sshd: &crate::test_sshd::Sshd) {
+    let before = bridge_pids(sshd);
+    assert!(!before.is_empty(), "no bridge process to kill: the pattern matches nothing");
+    for pid in &before {
+        let _ = std::process::Command::new("kill").arg(pid).status();
+    }
+    wait_secs(cx, 60, "reconnected through a new bridge", |cx| {
+        tick(cx);
+        conn(wb, cx) == "connected" && bridge_pids(sshd).iter().any(|p| !before.contains(p))
+    });
+}
+
 /// Nonexistent name: the connection fails with the reason (name doesn't resolve); local work goes on.
 #[gpui::test]
 fn an_unknown_host_name_fails_with_a_reason_and_local_work_continues(cx: &mut TestAppContext) {
@@ -131,21 +153,7 @@ fn a_dropped_bridge_reconnects_and_the_edit_can_be_saved(cx: &mut TestAppContext
     let ed = ssh_open_file(&wb, cx, &dir.join("src/main.rs"));
     ed.update(cx, |e, cx| e.insert_at_for_test(0, "// kept\n", cx));
 
-    // The failure on slow CI runners was a bare timeout: say what was killed and which notices came and went.
-    let pattern = format!("{}/remote/agent.*--attach", sshd.dir.display());
-    let matched = std::process::Command::new("pgrep").arg("-f").arg(&pattern).output().map_or(0, |o| String::from_utf8_lossy(&o.stdout).lines().count());
-    eprintln!("{matched} agent process(es) match {pattern:?}");
-    let _ = std::process::Command::new("pkill").arg("-f").arg(&pattern).status();
-    let mut seen = String::new();
-    wait_secs(cx, 60, "reconnected", |cx| {
-        tick(cx);
-        let now = notice(&wb, cx);
-        if now != seen {
-            eprintln!("notice: {now:?}");
-            seen.clone_from(&now);
-        }
-        now.starts_with("Reconnected")
-    });
+    drop_the_bridge_and_wait_for_the_reconnect(&wb, cx, &sshd);
     assert!(ed.read_with(cx, |e, _| e.is_dirty()), "the unsaved edit survived the reconnect");
     ed.update(cx, |e, cx| e.save_now(cx));
     wait_secs(cx, 30, "the save to reach the server", |cx| {
@@ -177,11 +185,7 @@ fn the_language_server_comes_back_after_a_reconnect(cx: &mut TestAppContext) {
         ed.read_with(cx, |e, _| e.lsp_client().is_some())
     });
 
-    let _ = std::process::Command::new("pkill").arg("-f").arg(format!("{}/remote/agent.*--attach", sshd.dir.display())).status();
-    wait_secs(cx, 60, "reconnected", |cx| {
-        tick(cx);
-        notice(&wb, cx).starts_with("Reconnected")
-    });
+    drop_the_bridge_and_wait_for_the_reconnect(&wb, cx, &sshd);
     wait_secs(cx, 30, "the language server to come back", |cx| {
         tick(cx);
         ed.read_with(cx, |e, _| e.lsp_client().is_some())

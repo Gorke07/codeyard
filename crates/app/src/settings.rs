@@ -1360,7 +1360,7 @@ mod tests {
         assert!(!path_matches("**/**/**/**/**/**/**/**/**/**/**/**/x", &vec!["d"; 60].join("/")));
         assert!(path_matches("**/**/**/**/**/**/**/d", &vec!["d"; 60].join("/")));
         assert!(!name_matches(&format!("{}b", "?*".repeat(200)), &"a".repeat(2000)));
-        assert!(t.elapsed().as_millis() < 1000, "took {:?}", t.elapsed());
+        assert!(t.elapsed().as_millis() < 1000 * u128::from(crate::test_sshd::timeout_scale()), "took {:?}", t.elapsed());
     }
 
     #[test]
