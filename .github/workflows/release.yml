@@ -4,7 +4,9 @@ name: release
 # Nothing is published until every platform has built: macos and windows only upload artifacts,
 # the last job creates the release in one step, so a failed Windows build never leaves a half release.
 # Run it by hand (Actions > release > Run workflow) for a dry run: everything is built, bundled and checked
-# and the files stay as artifacts, but no release is created.
+# and the files stay as artifacts, but no release is created. It signs too, so the signing path is exercised before a tag.
+# Every release carries SHA256SUMS.txt.sig (Ed25519 over SHA256SUMS.txt, secret UPDATE_SIGNING_KEY) and RELEASE_NOTES.md:
+# see docs/releasing.md.
 on:
   push:
     tags: ["v*"]
@@ -31,6 +33,22 @@ jobs:
       - run: scripts/arch-check.sh
       - run: scripts/docs-check.sh
       - run: scripts/licenses.sh
+      - run: scripts/verify-release.sh --self-test
+      # An unsigned release would make every installed app refuse to update, so a missing or wrong key fails here,
+      # minutes in, not after the builds. The check signs a dummy file and verifies it with scripts/update-public-key.pem.
+      - name: Check the update signing key
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set +x
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "::error title=UPDATE_SIGNING_KEY is empty::The repository secret UPDATE_SIGNING_KEY is missing or empty. A release without a signature cannot be installed as an update. See docs/releasing.md."
+            exit 1
+          fi
+          probe="$(mktemp -d)"
+          echo "probe" > "$probe/SHA256SUMS.txt"
+          scripts/sign-release.sh "$probe" || { echo "::error title=UPDATE_SIGNING_KEY does not match scripts/update-public-key.pem::See docs/releasing.md (key rotation)."; exit 1; }
+          rm -rf "$probe"
 
   macos:
     needs: verify
@@ -188,27 +206,44 @@ jobs:
         with:
           name: release-notes
           path: notes
+      # The release body and the signed RELEASE_NOTES.md are the same file: what the app shows is what the release shows.
       - name: Merge checksums and verify every file against them
         working-directory: dist
         run: |
-          cat SHA256SUMS.txt SHA256SUMS-windows.txt > SHA256SUMS.all
+          cp ../notes/notes.md RELEASE_NOTES.md
+          sha256sum RELEASE_NOTES.md > SHA256SUMS-notes.txt
+          cat SHA256SUMS.txt SHA256SUMS-windows.txt SHA256SUMS-notes.txt > SHA256SUMS.all
           mv SHA256SUMS.all SHA256SUMS.txt
-          rm SHA256SUMS-windows.txt
+          rm SHA256SUMS-windows.txt SHA256SUMS-notes.txt
           # A mismatch here means an artifact was corrupted between the build and this job.
           sha256sum -c SHA256SUMS.txt
-          [ "$(grep -c . SHA256SUMS.txt)" -ge 4 ] || { echo "expected at least the DMG, tar.gz, ZIP and setup EXE"; exit 1; }
+          [ "$(grep -c . SHA256SUMS.txt)" -ge 5 ] || { echo "expected at least the DMG, tar.gz, ZIP, setup EXE and RELEASE_NOTES.md"; exit 1; }
           ls -l
+      # Signs SHA256SUMS.txt (the only thing the in-app updater trusts) and checks the signature with the public key in the
+      # repo before anything is published. Runs in a dry run too. The key is only in this step's environment.
+      - name: Sign SHA256SUMS.txt
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set +x
+          [ -n "$UPDATE_SIGNING_KEY" ] || { echo "::error title=UPDATE_SIGNING_KEY is empty::Refusing to build an unsigned release."; exit 1; }
+          scripts/sign-release.sh dist
+      - name: Verify the signature and every file as a user would
+        run: |
+          scripts/verify-release.sh --dir dist
+          [ "$(wc -c < dist/SHA256SUMS.txt.sig | tr -d ' ')" = 64 ]
+          ls -l dist
       - name: Create the release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "$GITHUB_REF_NAME" --notes-file notes/notes.md --verify-tag
+            --title "$GITHUB_REF_NAME" --notes-file dist/RELEASE_NOTES.md --verify-tag
       - name: Dry run, show what would be published
         if: github.ref_type != 'tag'
         run: |
-          echo "Dry run: no release created. Files that would be attached:"
+          echo "Dry run: no release created. Files that would be attached (signed and verified above):"
           ls -l dist
           echo "--- release notes ---"
-          cat notes/notes.md
+          cat dist/RELEASE_NOTES.md
