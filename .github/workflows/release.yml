@@ -174,7 +174,8 @@ jobs:
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
           }
-          $checksums | Set-Content -Encoding ascii target/windows/SHA256SUMS-windows.txt
+          # Set-Content writes CRLF; the signed list must be plain LF (the updater rejects anything else).
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'target/windows/SHA256SUMS-windows.txt'), (($checksums -join "`n") + "`n"))
       - name: Upload Windows release files
         uses: actions/upload-artifact@v4
         with:
@@ -212,11 +213,13 @@ jobs:
         run: |
           cp ../notes/notes.md RELEASE_NOTES.md
           sha256sum RELEASE_NOTES.md > SHA256SUMS-notes.txt
-          cat SHA256SUMS.txt SHA256SUMS-windows.txt SHA256SUMS-notes.txt > SHA256SUMS.all
+          # Defence in depth: whatever a runner wrote, the signed list is LF only.
+          cat SHA256SUMS.txt SHA256SUMS-windows.txt SHA256SUMS-notes.txt | tr -d '\r' > SHA256SUMS.all
           mv SHA256SUMS.all SHA256SUMS.txt
           rm SHA256SUMS-windows.txt SHA256SUMS-notes.txt
           # A mismatch here means an artifact was corrupted between the build and this job.
           sha256sum -c SHA256SUMS.txt
+          ! grep -q "$(printf '\r')" SHA256SUMS.txt || { echo "SHA256SUMS.txt contains CR characters"; exit 1; }
           [ "$(grep -c . SHA256SUMS.txt)" -ge 5 ] || { echo "expected at least the DMG, tar.gz, ZIP, setup EXE and RELEASE_NOTES.md"; exit 1; }
           ls -l
       # Signs SHA256SUMS.txt (the only thing the in-app updater trusts) and checks the signature with the public key in the
