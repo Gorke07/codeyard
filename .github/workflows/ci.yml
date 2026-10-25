@@ -108,9 +108,16 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
       - run: cargo test -p proto -p agent -p host -p buffer -p state -p syntax -p theme
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --profile release-agent -p agent --target x86_64-unknown-linux-musl
-      - run: test $(du -k target/x86_64-unknown-linux-musl/release-agent/codeyard-agent | cut -f1) -le 1600
+      # The shipped Linux agents are built with cargo-zigbuild (release.yml, docs/releasing.md), so the size gate builds
+      # the same way. A plain `cargo build` with the system linker produces a static-PIE (+170 KB of relocations) and
+      # measures ~1.7 MB: not the artifact users get. pip installs cargo-zigbuild together with zig.
+      - run: pip3 install --user cargo-zigbuild
+      - run: cargo zigbuild --profile release-agent -p agent --target x86_64-unknown-linux-musl
+      - name: Agent size budget
+        run: |
+          SIZE=$(du -k target/x86_64-unknown-linux-musl/release-agent/codeyard-agent | cut -f1)
+          echo "agent: ${SIZE} KB (budget 1600 KB)"
+          test "$SIZE" -le 1600
 
   # Experimental: the full workspace, GPUI included, on Linux. Not a gate: it may fail without
   # blocking a merge. The package list is derived from the Linux dependencies of vendor/gpui
