@@ -454,6 +454,12 @@ fn text_view(id: impl Into<gpui::ElementId>, spans: &[Span], p: &Palette, base: 
         .into_any_element()
 }
 
+/// A parsed document as elements, for places that show Markdown outside the preview tab (the update dialog's release notes).
+/// Links open through the same safe-scheme check as in the preview.
+pub(crate) fn document_view(blocks: &[Block], id: &str, p: &Palette) -> Vec<gpui::AnyElement> {
+    blocks.iter().enumerate().map(|(i, b)| block_view(b, &format!("{id}{i}"), p, 0)).collect()
+}
+
 fn block_view(b: &Block, id: &str, p: &Palette, depth: usize) -> gpui::AnyElement {
     match b {
         Block::Heading(level, spans) => {

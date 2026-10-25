@@ -93,17 +93,22 @@ Can't read {0}: {1}
 Cancel	
 Cancel Transfer	
 Cancel “{}”?	
+Cancelling…	
 Cannot check out #{}: you have uncommitted changes that would be overwritten. Commit or stash them, then try again	
 Cannot open this link: {}	
 Change All Occurrences	
 Changed {0} file ({1} file operations skipped)|Changed {0} files ({1} file operations skipped)	
 Changed {} file|Changed {} files	
 Changes	
+Check Daily	
 Check JSON and YAML files against their schema (problems, hover, suggestions)	
 Check comments in code files too (prose files are always checked)	
+Check for Updates…	
+Check for updates automatically?	
 Check out #{} as pr-{}	
 Checked out #{} as pr-{}	
 Checked out {} (detached HEAD)	
+Checking for updates…	
 Checking out pull request #{}…	
 Checkout (Detached)	
 Checkout to…	
@@ -131,6 +136,14 @@ Close details
 Close to the Right	
 Close without saving	
 Closing the window loses everything since the last save.	
+Codeyard could not start the new version: {}. The update is installed; open Codeyard again to use it.	
+Codeyard couldn't reach the update server. Check your internet connection and try again.	
+Codeyard is still installing an update	
+Codeyard is up to date	
+Codeyard {} is available	
+Codeyard {} is available.	
+Codeyard {} is available. Click for details.	
+Codeyard {} is installed. Click for details.	
 Collapse All Inside	
 Collapse Folders	
 Collapse all results	
@@ -245,6 +258,8 @@ Could not switch to {0}: {1}
 Could not tell whether it is merged ({}): git will refuse if commits would be lost.	
 Could not write {0}: {1}	
 Could not write {}: {}	
+Couldn't check for updates	
+Couldn't download the update	
 Create Branch Here…	
 Create Branch…	
 Create Tag Here…	
@@ -315,9 +330,12 @@ Docker, then open a folder inside it
 Don't Save	
 Download	
 Download Here	
+Download Page	
 Download a schema from {}?	
 Download schemas from SchemaStore and cache them (off: only local and cached schemas)	
 Downloaded to {} ({})	
+Downloading Codeyard {}	
+Downloading Codeyard {}. Click for details.	
 Downloading Microsoft's js-debug (about 1.2 MB)…	
 Downloading has to wait: the connection dropped and is reconnecting.	
 Downloading has to wait: the connection is still being set up.	
@@ -599,10 +617,12 @@ HTTP: Show Last Response Headers
 Hard reset to {}?	
 Help	
 Help: About Codeyard	
+Help: Check for Updates…	
 Help: Grant Full Disk Access…	
 Help: Keyboard Shortcuts Reference	
 Help: Welcome	
 Hex dump (read-only copy)	
+Hide	
 Hide Others	
 Hide Panel (⌘J)	
 Hide codeyard	
@@ -633,7 +653,12 @@ Indexing lines…
 Inline	
 Insert a snippet (or type its prefix in the editor and press Tab)	
 Insert the closing bracket or quote	
+Install and Restart	
 Install which dictionary? (English is built in)	
+Installing Codeyard {}	
+Installing Codeyard {}. Click for details.	
+Installing — Codeyard will restart.	
+Installing…	
 Into a folder on this computer or the connected host	
 Invalid pattern	
 It can't be moved to the Trash ({}). Deleting it permanently can't be undone.	
@@ -645,6 +670,7 @@ Jul
 Jun	
 Keep	
 Keep Going	
+Keep Waiting	
 Keep unsaved changes across restarts	
 Key login is set up for “{}” (created {}). The next connection needs no password.	
 Key login is set up for “{}”. The next connection needs no password.	
@@ -657,6 +683,7 @@ Language mode for this file
 Language of Uppercase / Lowercase / Title Case: auto (Turkish rules when the text has ı İ ş ğ), tr (i ↔ İ, ı ↔ I) or en	
 Language of the menus, command palette, Welcome screen, status bar, Source Control, Explorer, Settings page chrome, file operations and Git prompts (the user guide lists exactly what is translated; the rest stays English): auto (the system language) or a language code, en or tr. Your own settings only; a folder cannot change it	
 Language servers are off in “{}” until you trust it: they can run the project's build scripts. Run “Workspace: Trust This Folder”.	
+Later	
 Learn	
 Let the language server format while typing }, ; or Enter	
 Lightweight editing, on this machine or over SSH.	
@@ -674,6 +701,7 @@ Loading pull requests…
 Loading…	
 Local	
 Local history	
+Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (asks github.com once a day whether a newer release exists; only the request is sent, nothing about you) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it	
 Lost the connection to {}: {}. Your open files stay here and unsaved changes are kept, but they cannot be saved until you reconnect (File: Save a Copy to This Computer… keeps one locally).	
 Lost the connection to {}: {}. Your open files stay here.	
 Manage SSH hosts	
@@ -833,13 +861,16 @@ Nothing to choose from.
 Nothing to commit	
 Nothing to rename here	
 Nothing to run: select some text or put the cursor on a line.	
+Nothing was installed. What the update server sent didn't match the signed checksums, so Codeyard discarded it.	
 Nothing yet.	
 Nothing yet: open a folder to see it here.	
 Nov	
 Oct	
 On this computer	
+Once a day, Codeyard can ask github.com for the checksum list of the latest release to see whether a newer version exists. That request is all that is sent: nothing about you or your files, no account and no tracking.	
 One line per commit: the most history in a narrow sidebar	
 One quiet color, outline glyphs	
+Only When I Ask	
 Only send it if you trust this file.	
 Only the connection is removed; the remote repository itself is untouched.	
 Only this host's entry is removed. The previous file is kept as config.codeyard-bak.	
@@ -935,6 +966,7 @@ Problems (⇧⌘M)
 Process ended. Press any key to close.	
 Process exited with code {}	
 Process exited with code {}. Press any key to close.	
+Progress	
 Project name	
 Projects: Add Folder to Projects…	
 Projects: Edit Projects	
@@ -956,9 +988,11 @@ Put the cursor on a symbol to rename it
 Query: {}	
 Quick Fix…	
 Quick fix	
+Quit Anyway	
 Quit codeyard	
 Quit without saving	
 Quitting loses everything since the last save.	
+Quitting now can leave the installation unfinished. It takes a few seconds.	
 Rebase	
 Rebase aborted	
 Rebase finished	
@@ -982,6 +1016,7 @@ Regex, Ignore Case
 Regex, Match Case	
 Regular expression	
 Regular expression (⌥R)	
+Release Page	
 Reload history	
 Remote & Languages	
 Remote: Add SSH Host…	
@@ -1046,7 +1081,12 @@ Reset to {0} ({1})
 Resolved {} conflict|Resolved {} conflicts	
 Response	
 Restart (⇧⌘F5)	
+Restart Codeyard to finish.	
+Restart Now	
+Restart to update	
+Restart without saving	
 Restarting language servers…	
+Restarting loses everything since the last save.	
 Restore Panel Size	
 Result	
 Reveal in Finder	
@@ -1152,6 +1192,7 @@ Showing the current branch (click: all branches)
 Showing the first 100,000 files of a very large folder	
 Shrink Selection	
 Side by side	
+Skip This Version	
 Small colored badges with the language's letters	
 Snippets reloaded	
 Snippets: Insert Snippet…	
@@ -1180,6 +1221,7 @@ Start
 Start a debug session first (F5): the adapter says which exceptions it can break on.	
 Start language servers	
 Start search results folded or open	
+Starting the download…	
 Starting “{}”…	
 Stash (Include Untracked)	
 Stashed changes	
@@ -1242,6 +1284,7 @@ The file is empty.
 The file is too large for an outline.	
 The folder and everything in it will be deleted.	
 The folder could not be read on the server: {}	
+The new version couldn't be installed from here. You can download it from the release page instead.	
 The program finished without stopping at any breakpoint. The debugger matches breakpoints to the debug info by file path: build with debug info (-g) from this folder, and check that the breakpoint is on a line with code.	
 The remote “{}” is not reachable as a git repository (it may be private or renamed); check `git remote -v`	
 The request failed.	
@@ -1250,6 +1293,9 @@ The response is larger than {} and was not downloaded.
 The search stopped at the result limit: only the files listed are changed. Open files can be undone; closed files are written to disk.	
 The server did not answer within 60 seconds.	
 The server wants credentials: run the command once in the terminal (or set up an SSH key).	
+The update couldn't be installed	
+The update couldn't be verified	
+The update failed. Click for details.	
 The workspace file lists no folder that exists on this computer.	
 The workspace has no extra folders.	
 The {} dictionary is installed and on.	
@@ -1265,6 +1311,7 @@ There is no commit to undo
 There is no request here. Write METHOD URL on a line, separate requests with ###.	
 They were not found.	
 This can't be undone.	
+This copy isn't installed as an app, so download the new version yourself.	
 This debug adapter does not support data breakpoints.	
 This debug adapter has no exception breakpoints.	
 This file has merge conflicts: resolve them first (Source Control marks it resolved when staged)	
@@ -1281,6 +1328,7 @@ This language server does not support outgoing calls
 This language server does not support subtypes	
 This language server does not support supertypes	
 This looks like a binary file, so it was not opened as text.	
+This release has no installer for this system. Download it from the release page.	
 This repository has no remote. Add one with Git: Add Remote…	
 Thursday	
 Timeline	
@@ -1297,6 +1345,7 @@ Transfer failed: {}
 Trust Folder and Continue	
 Trust this host and connect	
 Trusted “{}”	
+Try Again	
 Try again	
 Tuesday	
 Turn Codeyard on in Privacy & Security.	
@@ -1319,6 +1368,11 @@ Unsaved changes stay open in their tabs; saving recreates the file.
 Unstage	
 Unstage all	
 Untracked files will be deleted. This can't be undone.	
+Update failed	
+Update installed	
+Update installed. Restart Codeyard to finish.	
+Updating…	
+Updating… {}%	
 Upload	
 Upload Files Here…	
 Uploaded {} item ({}) to {}|Uploaded {} items ({}) to {}	
@@ -1330,6 +1384,7 @@ Uploading needs the connection to {}, which failed: use Reconnect first.
 Uploading works with a connected SSH host: connect first (⌃R).	
 VS Code settings.json could not be read	
 Variables	
+Verifying and installing…	
 Version {}	
 View	
 View File History	
@@ -1382,11 +1437,15 @@ Workspace: Trust This Folder
 Workspace: {} folder in the Explorer.|Workspace: {} folders in the Explorer.	
 Wrap long lines at the window edge	
 You are connected to “{}”. Disconnect first.	
+You can change this at any time in Settings (update.check). Check for Updates… always works, whatever you choose.	
 You can restore it from the Trash.	
 You have unsaved changes	
+You have {}	
+You have {}, the latest version.	
 You · Uncommitted changes	
 Your changes will be lost if you don't save them.	
 Your commits on this branch are rewritten on top of it (their hashes change). Conflicts stop the rebase; resolve them and use Git: Continue Rebase, or Git: Abort Rebase.	
+Your open files and unsaved changes come back after the restart.	
 Your public key (~/.ssh/id_ed25519.pub; created if you have none) is added to the server's authorized_keys, so later connections need no password. You may be asked for the server's password once.	
 Zoom	
 Zoom In	
@@ -1582,6 +1641,7 @@ your words
 {0} lines · {1}	
 {0} lines · {1} MB · read-only	
 {0} lines, showing from line {1}	
+{0} of {1} MB	
 {0} of {1}{2}	
 {0} result in {1} files|{0} results in {1} files	
 {0}, {1} {2} {3}	

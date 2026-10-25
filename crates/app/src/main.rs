@@ -102,7 +102,10 @@ mod trash;
 mod tree;
 mod ui;
 mod update;
+mod update_backend;
 mod update_install;
+#[cfg(test)]
+mod update_ui_tests;
 mod vscode;
 mod workbench;
 mod workspace_file;
@@ -186,6 +189,12 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", picker::PickConfirm, Some("Picker")),
         KeyBinding::new("escape", picker::PickDismiss, Some("Picker")),
         KeyBinding::new("backspace", picker::PickBackspace, Some("Picker")),
+        // The update dialog: Esc closes it, Tab walks its buttons, Enter and Space press the focused one (Enter: the primary one).
+        KeyBinding::new("escape", UpdateDismiss, Some("UpdateDialog")),
+        KeyBinding::new("tab", UpdateFocusNext, Some("UpdateDialog")),
+        KeyBinding::new("shift-tab", UpdateFocusPrev, Some("UpdateDialog")),
+        KeyBinding::new("enter", UpdateConfirm, Some("UpdateDialog")),
+        KeyBinding::new("space", UpdateConfirm, Some("UpdateDialog")),
         // Editor
         KeyBinding::new("left", MoveLeft, ed),
         KeyBinding::new("right", MoveRight, ed),
@@ -486,6 +495,13 @@ struct Args {
     run: Vec<String>,
 }
 
+/// The first-run question and the daily check belong to a real session: not to debug builds (unless a developer asked for a
+/// scripted update with `CODEYARD_DEV_UPDATE`), and not to a window that a script drives (`--do`, `--panel`).
+fn update_checks_enabled(args: &Args) -> bool {
+    let scripted_update = cfg!(debug_assertions) && std::env::var_os("CODEYARD_DEV_UPDATE").is_some();
+    (!cfg!(debug_assertions) || scripted_update) && args.run.is_empty() && args.panel.is_none()
+}
+
 /// What `codeyard --version` prints (also what a bug report should quote).
 fn version_line() -> String {
     format!("codeyard {}", env!("CARGO_PKG_VERSION"))
@@ -643,6 +659,10 @@ pub fn open_workbench_window(cx: &mut App) -> Option<gpui::WindowHandle<Workbenc
             let entity = cx.entity().downgrade();
             window.on_window_should_close(cx, move |window, cx| {
                 let Some(wb) = entity.upgrade() else { return true };
+                // Closing the last window ends the app: not in the middle of swapping a new version in.
+                if cx.windows().len() == 1 && wb.update(cx, |wb, cx| wb.hold_close_for_install(window, cx)) {
+                    return false;
+                }
                 // Hot exit: back up and close. If it's off and the buffer is dirty, ask.
                 if wb.update(cx, |wb, cx| wb.prepare_quit(cx)) {
                     return true;
@@ -724,6 +744,9 @@ fn main() {
                 }
                 if let Some(alias) = args.connect.clone() {
                     wb.connect(alias, window, cx);
+                }
+                if update_checks_enabled(&args) {
+                    wb.schedule_update_checks(window, cx);
                 }
                 window.focus(&wb.focus_handle(cx));
                 cx.activate(true);

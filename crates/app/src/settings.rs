@@ -163,6 +163,8 @@ pub struct Settings {
     pub http_confirm: String,
     /// UI language (`ui.language`): "auto" (system language), "en" or "tr"; user settings only. "en" in tests.
     pub ui_language: String,
+    /// Update checks (`update.check`); user settings only, because it decides whether the app contacts the network by itself.
+    pub update_check: crate::update::Policy,
     /// Folder hierarchy lines in the explorer.
     pub tree_guides: bool,
     /// Whether the Git graph shows the author (avatar and name) and the short hash.
@@ -289,6 +291,7 @@ impl Default for Settings {
             http_run_on: "workspace".into(),
             http_confirm: "remote".into(),
             ui_language: if cfg!(test) { "en" } else { "auto" }.into(),
+            update_check: crate::update::Policy::Ask,
             tree_guides: true,
             graph_show_author: true,
             graph_show_hash: true,
@@ -522,7 +525,7 @@ pub const RESTRICTED_KEYS: &[&str] = &["terminal.shell", "lsp.servers", "json.sc
 
 /// Not read from the project file even in a trusted folder: the gate is global, so one
 /// repo touching it would open it for every folder.
-pub const USER_ONLY_KEYS: &[&str] = &["security.workspaceTrust.enabled", "http.confirmRequests", "ui.language"];
+pub const USER_ONLY_KEYS: &[&str] = &["security.workspaceTrust.enabled", "http.confirmRequests", "ui.language", "update.check"];
 
 /// `trusted`: the folder is trusted. If not, `RESTRICTED_KEYS` in the project layer are ignored and a warning is recorded.
 pub fn parse_layers_trusted(user: &str, project: &[Layer], trusted: bool) -> Result<(Settings, Vec<String>), String> {
@@ -707,6 +710,9 @@ fn parse_object(obj: &Map<String, Value>, quiet: &[String]) -> (Settings, Vec<St
     }
     if let Some(v) = r.choice("ui.language", crate::i18n::SETTING_CHOICES) {
         s.ui_language = v;
+    }
+    if let Some(v) = r.choice("update.check", &["ask", "daily", "manual"]).and_then(|v| v.parse().ok()) {
+        s.update_check = v;
     }
     if let Some(v) = r.choice("explorer.sortOrder", &["default", "filesFirst", "mixed", "type"]) {
         s.sort_order = v;
@@ -981,6 +987,7 @@ fn parse_object(obj: &Map<String, Value>, quiet: &[String]) -> (Settings, Vec<St
     }
     const KNOWN: &[&str] = &[
         "ui.language",
+        "update.check",
         "http.runOn",
         "http.confirmRequests",
         "spelling.enabled",
@@ -1438,6 +1445,29 @@ mod tests {
         }
         let (s, _) = parse_layers_trusted(r#"{ "http.confirmRequests": "always" }"#, &project, true).unwrap();
         assert_eq!(s.http_confirm, "always", "the user's own value stands");
+    }
+
+    /// `update.check` decides whether the app contacts github.com by itself: a repository must never choose it, trusted or not.
+    #[test]
+    fn update_check_parses_and_cannot_come_from_a_project() {
+        use crate::update::Policy;
+        assert_eq!(Settings::default().update_check, Policy::Ask, "undecided until the user answers");
+        for (v, want) in [("ask", Policy::Ask), ("daily", Policy::Daily), ("manual", Policy::Manual)] {
+            let (s, w) = parse_layers(&format!(r#"{{ "update.check": "{v}" }}"#), &[]).unwrap();
+            assert_eq!((s.update_check, w.len()), (want, 0), "{w:?}");
+        }
+        let (s, w) = parse_layers(r#"{ "update.check": "weekly" }"#, &[]).unwrap();
+        assert_eq!(s.update_check, Policy::Ask, "an invalid value keeps the default");
+        assert_eq!(w.len(), 1, "{w:?}");
+        let project =
+            [(".codeyard/settings.jsonc", r#"{ "update.check": "daily" }"#, true), (".vscode/settings.json", r#"{ "update.check": "daily" }"#, false)];
+        for trusted in [false, true] {
+            let (s, w) = parse_layers_trusted(r#"{ "update.check": "manual" }"#, &project, trusted).unwrap();
+            assert_eq!(s.update_check, Policy::Manual, "trusted={trusted}: the user's own value wins over every folder file");
+            assert!(w.iter().any(|m| m.contains("only be set in your own")), "{w:?}");
+            let (s, _) = parse_layers_trusted("{}", &project, trusted).unwrap();
+            assert_eq!(s.update_check, Policy::Ask, "trusted={trusted}: a folder cannot turn network checks on");
+        }
     }
 
     #[test]

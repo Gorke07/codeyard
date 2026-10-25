@@ -241,6 +241,7 @@ impl Workbench {
             Command::action("Remote: Upload Files to This Folder…", UploadHere),
             Command::action("Remote: Download Active File…", DownloadActive),
             Command::action("Help: About Codeyard", ShowAbout),
+            Command::action("Help: Check for Updates…", CheckForUpdates),
             Command::action("Help: Grant Full Disk Access…", ShowDiskAccess),
             Command::action("Theme: Save Current Colors as User Theme…", SaveThemeAs),
             Command::action("Theme: Open User Themes Folder", OpenThemesFolder),

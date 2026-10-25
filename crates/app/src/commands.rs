@@ -364,6 +364,7 @@ registry! {
     "workbench.keyboardShortcuts" => wb::ShowKeyboardShortcuts,
     "workbench.importVsCode" => wb::ImportVsCode,
     "workbench.quit" => wb::Quit,
+    "workbench.checkForUpdates" => wb::CheckForUpdates,
     "terminal.toggle" => wb::ToggleTerminal,
     "terminal.new" => wb::NewTerminal,
     "terminal.split" => wb::SplitTerminal,

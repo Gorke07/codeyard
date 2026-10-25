@@ -157,6 +157,12 @@ status bar reports it.
 | --- | --- | --- | --- |
 | `ui.language` | `auto`, `en`, `tr` | `auto` | Language of the menus, command palette, Welcome screen, status bar, Source Control, Explorer, Settings page chrome, file operations and Git prompts (the user guide lists exactly what is translated; the rest stays English): auto (the system language) or a language code, en or tr. Your own settings only; a folder cannot change it |
 
+## `update`
+
+| Setting | Values | Default | What it does |
+| --- | --- | --- | --- |
+| `update.check` | `ask`, `daily`, `manual` | `ask` | Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (asks github.com once a day whether a newer release exists; only the request is sent, nothing about you) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it |
+
 ## `window`
 
 | Setting | Values | Default | What it does |

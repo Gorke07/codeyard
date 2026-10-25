@@ -18,8 +18,6 @@
 //! let plan = update::stage_and_install(&dl, &update::install_kind())?;
 //! if let Some(mut c) = update::relaunch_command(&plan) { c.spawn()?; } // then quit the app
 //! ```
-// The UI is built on this API next; until then nothing outside the tests calls it.
-#![allow(dead_code)]
 
 use std::fmt;
 use std::io::{self, Read};
@@ -300,6 +298,7 @@ pub(crate) struct Config {
 impl Config {
     /// `CODEYARD_UPDATE_URL` replaces the release download URL (a mirror, or a local server for testing). The signature
     /// check still applies: the keys cannot be overridden outside of tests.
+    #[cfg_attr(test, allow(dead_code, reason = "only the real backend calls it; tests use fakes or `check_with`"))]
     pub(crate) fn from_env() -> Self {
         Self::new(std::env::var("CODEYARD_UPDATE_URL").ok().filter(|u| !u.is_empty()))
     }
@@ -493,6 +492,7 @@ impl Sums {
 
 /// Is there a release newer than `current` (`env!("CARGO_PKG_VERSION")`)? `Ok(None)`: up to date (an equal or older
 /// release is not offered, so a downgrade is never suggested). Blocking: a few small requests, at most ~30 s each.
+#[cfg_attr(test, allow(dead_code, reason = "only the real backend calls it; tests use fakes or `check_with`"))]
 pub fn check(current: &str) -> Result<Option<Release>, UpdateError> {
     check_with(&Config::from_env(), current)
 }
@@ -560,6 +560,7 @@ impl Drop for RemoveOnDrop {
     }
 }
 
+#[cfg_attr(test, allow(dead_code, reason = "only the real backend calls it; tests use fakes or `check_with`"))]
 fn updates_dir() -> Result<PathBuf, UpdateError> {
     let state = crate::workbench::state_path().and_then(|p| p.parent().map(Path::to_path_buf));
     state.map(|d| d.join("updates")).ok_or_else(|| UpdateError::Io { what: "find the state folder", source: io::ErrorKind::NotFound.into() })
@@ -568,6 +569,7 @@ fn updates_dir() -> Result<PathBuf, UpdateError> {
 /// Downloads the installer of `release` into a fresh private folder and checks it against the signed hash.
 /// Blocking; `progress` is called about ten times a second on the calling thread. Setting `cancel` stops the
 /// transfer within ~100 ms (`Cancelled`). The result is only ever returned for a file whose hash matched.
+#[cfg_attr(test, allow(dead_code, reason = "only the real backend calls it; tests use fakes or `check_with`"))]
 pub fn download(release: &Release, progress: &mut dyn FnMut(Progress), cancel: &AtomicBool) -> Result<Downloaded, UpdateError> {
     download_in(&Config::from_env(), &updates_dir()?, env!("CARGO_PKG_VERSION"), release, progress, cancel)
 }

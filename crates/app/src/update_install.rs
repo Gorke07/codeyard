@@ -4,7 +4,6 @@
 //! macOS in short: mount the disk image read-only -> copy `Codeyard.app` next to the installed app (same volume, so the
 //! last step is a rename) -> unmount -> check the copy -> `rename(installed, old)`, `rename(copy, installed)`, rolling
 //! back on any failure -> delete the old copy. The installed app is untouched until every check has passed.
-#![allow(dead_code)] // Used by the UI next.
 
 use std::io;
 use std::path::{Path, PathBuf};

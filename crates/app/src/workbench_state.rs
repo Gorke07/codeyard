@@ -226,3 +226,50 @@ pub(super) struct TabsState {
     /// Tab bar scroll (so the active tab stays visible).
     pub(super) tab_scroll: gpui::ScrollHandle,
 }
+
+/// In-app updates: what the updater is doing, the dialog, and the worker thread (see workbench_update.rs).
+pub(super) struct UpdateUi {
+    /// The network, the installer, the clock and quitting; replaced by a fake in tests.
+    pub(super) backend: Arc<dyn crate::update_backend::UpdateBackend>,
+    pub(super) state: update_glue::UpdateState,
+    pub(super) dialog: update_glue::Dialog,
+    /// The check in progress was asked for by the user: its dialog is open and its errors are shown.
+    pub(super) manual: bool,
+    /// Release notes of the offered release (parsed once) and how this copy can be updated (looked up when a release is
+    /// offered, because it probes the disk).
+    pub(super) notes: Vec<crate::markdown::Block>,
+    pub(super) kind: crate::update_install::InstallKind,
+    pub(super) run: Option<update_glue::Run>,
+    pub(super) next_run: u64,
+    /// Time of the last check that got an answer (also kept in the state database).
+    pub(super) last_check: Option<std::time::SystemTime>,
+    /// One handle per dialog button, in tab order, and where focus returns when the dialog closes.
+    pub(super) focus: Vec<FocusHandle>,
+    pub(super) return_focus: Option<FocusHandle>,
+    /// Enter and Space answer the first-run question only after a short delay (see `ARM_AFTER`).
+    pub(super) armed: bool,
+    pub(super) arm: Option<gpui::Task<()>>,
+    /// The startup timers (the question, then the daily check).
+    pub(super) schedule: Option<gpui::Task<()>>,
+}
+
+impl UpdateUi {
+    pub(super) fn new(dev: bool, cx: &mut App) -> Self {
+        UpdateUi {
+            backend: crate::update_backend::default_backend(dev),
+            state: update_glue::UpdateState::Idle,
+            dialog: update_glue::Dialog::Closed,
+            manual: false,
+            notes: Vec::new(),
+            kind: crate::update_install::InstallKind::Manual,
+            run: None,
+            next_run: 0,
+            last_check: None,
+            focus: (0..update_glue::MAX_BUTTONS).map(|_| cx.focus_handle().tab_stop(true)).collect(),
+            return_focus: None,
+            armed: false,
+            arm: None,
+            schedule: None,
+        }
+    }
+}

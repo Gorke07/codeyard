@@ -94,6 +94,12 @@ daily update checks (`update.check`); otherwise an update check happens when the
   swapped by two renames that are undone on failure. Windows, Inno installation: the verified setup program runs silently.
   Everything else (debug builds, bare binaries, Linux, a portable zip, a read-only `/Applications`) is `Manual`: the UI shows
   the release page.
+- **The UI.** `workbench_update.rs` is the state machine (`Idle`, `Checking`, `UpToDate`, `Available`, `Downloading`, `Installing`,
+  `Ready`, `Error`) and everything the dialog says; `workbench_view_update.rs` draws it and the status bar item. The network, the
+  installer, the clock and quitting are behind `UpdateBackend` (`update_backend.rs`), so tests script every outcome. Machine-written
+  values (time of the last good check, skipped version, installed version, the notified version, when the question may come back) are
+  keys `update.*` in the state database; the one setting, `update.check`, is user-only like `ui.language`. Restarting goes through the
+  normal quit path (hot exit), starts the new version first and quits second. User-facing description: [user guide](user-guide.md#updates).
 
 ## Local state
 

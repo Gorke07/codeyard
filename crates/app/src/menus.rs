@@ -60,7 +60,14 @@ pub(crate) fn desktop_menus(recent: &[state::RecentWorkspace]) -> Vec<Menu> {
         I::action(tr("Exit"), wb::Quit),
     ]);
     menus[3].items.extend([I::separator(), I::action(tr("Color Theme…"), wb::SelectTheme), I::action(tr("Keyboard Shortcuts"), wb::OpenKeybindings)]);
-    menus.push(Menu { name: tr("Help").into(), items: vec![I::action(tr("Welcome"), wb::ShowWelcome), I::action(tr("About Codeyard"), wb::ShowAbout)] });
+    menus.push(Menu {
+        name: tr("Help").into(),
+        items: vec![
+            I::action(tr("Welcome"), wb::ShowWelcome),
+            I::action(tr("About Codeyard"), wb::ShowAbout),
+            I::action(tr("Check for Updates…"), wb::CheckForUpdates),
+        ],
+    });
     menus
 }
 
@@ -182,6 +189,7 @@ pub(crate) fn menus(recent: &[state::RecentWorkspace]) -> Vec<Menu> {
             name: "codeyard".into(),
             items: vec![
                 I::action(tr("About codeyard"), wb::ShowAbout),
+                I::action(tr("Check for Updates…"), wb::CheckForUpdates),
                 sep(),
                 I::action(tr("Settings…"), wb::OpenSettingsPage),
                 I::action(tr("Open Settings (JSON)"), wb::OpenSettings),

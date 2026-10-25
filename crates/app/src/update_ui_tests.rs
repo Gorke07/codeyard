@@ -1,0 +1,1032 @@
+//! The update dialog, its status bar item and the rules around them, against a scripted backend: no network, no installer, no
+//! real quit. The core (`update.rs`, `update_install.rs`) has its own tests; here only what the workbench decides is checked.
+
+use std::collections::VecDeque;
+use std::io;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use gpui::{App, AppContext as _, Entity, Focusable as _, TestAppContext, VisualTestContext};
+
+use crate::qa_integration_tests::wait_ticking;
+use crate::qa_workbench_tests::{fresh, open, open_in, project, setup, setup_persistent, setup_with_config};
+use crate::update::{Asset, Downloaded, Progress, Release, UpdateError};
+use crate::update_backend::UpdateBackend;
+use crate::update_install::{InstallKind, InstallPlan};
+use crate::workbench::Workbench;
+
+const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+const APP: &str = "/Applications/Codeyard.app";
+
+fn release(version: &str) -> Release {
+    Release {
+        version: version.into(),
+        notes: "## What is new\n\n- Faster **start**\n- A [link](https://example.com)\n".into(),
+        asset: Some(Asset { name: format!("Codeyard-{version}-macos-arm64.dmg"), url: "https://example.invalid/x.dmg".into(), sha256: "0".repeat(64) }),
+    }
+}
+
+fn mac_plan() -> InstallPlan {
+    InstallPlan::MacApp { app: PathBuf::from(APP) }
+}
+
+fn network() -> UpdateError {
+    UpdateError::Network("curl: (6) Could not resolve host".into())
+}
+
+enum Download {
+    /// Reports progress and returns the file.
+    Done,
+    Fail(UpdateError),
+    /// Reports progress until cancelled, then answers like the real download.
+    UntilCancelled,
+    /// Waits for `release_download`, then fails.
+    FailWhenReleased(UpdateError),
+}
+
+/// A backend whose answers the test scripts. Every call is written to `calls`, in order.
+struct Fake {
+    checks: Mutex<VecDeque<Result<Option<Release>, UpdateError>>>,
+    downloads: Mutex<VecDeque<Download>>,
+    installs: Mutex<VecDeque<Result<InstallPlan, UpdateError>>>,
+    /// While set, `stage_and_install` waits: the swap is in progress.
+    hold_install: AtomicBool,
+    kind: Mutex<InstallKind>,
+    now: AtomicU64,
+    relaunch_fails: AtomicBool,
+    calls: Mutex<Vec<String>>,
+    /// A download that was cancelled has returned and cleaned up.
+    cleaned_up: AtomicBool,
+    release_download: AtomicBool,
+}
+
+impl Fake {
+    fn new() -> Arc<Fake> {
+        Arc::new(Fake {
+            checks: Mutex::default(),
+            downloads: Mutex::default(),
+            installs: Mutex::default(),
+            hold_install: AtomicBool::new(false),
+            kind: Mutex::new(InstallKind::MacBundle { app: PathBuf::from(APP) }),
+            now: AtomicU64::new(1_800_000_000),
+            relaunch_fails: AtomicBool::new(false),
+            calls: Mutex::default(),
+            cleaned_up: AtomicBool::new(false),
+            release_download: AtomicBool::new(false),
+        })
+    }
+
+    fn check_returns(&self, r: Result<Option<Release>, UpdateError>) {
+        self.checks.lock().unwrap().push_back(r);
+    }
+
+    fn download_does(&self, d: Download) {
+        self.downloads.lock().unwrap().push_back(d);
+    }
+
+    fn install_returns(&self, r: Result<InstallPlan, UpdateError>) {
+        self.installs.lock().unwrap().push_back(r);
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn count(&self, call: &str) -> usize {
+        self.calls().iter().filter(|c| *c == call).count()
+    }
+
+    fn log(&self, call: &str) {
+        self.calls.lock().unwrap().push(call.into());
+    }
+
+    /// Waits about 100 ms, or until `stop` says so.
+    fn nap(&self, stop: &dyn Fn() -> bool) {
+        for _ in 0..20 {
+            if stop() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn advance(&self, by: Duration) {
+        self.now.fetch_add(by.as_secs(), Ordering::SeqCst);
+    }
+}
+
+impl UpdateBackend for Fake {
+    fn version(&self) -> &str {
+        "0.1.0"
+    }
+
+    fn check(&self) -> Result<Option<Release>, UpdateError> {
+        self.log("check");
+        self.checks.lock().unwrap().pop_front().unwrap_or_else(|| Err(UpdateError::Network("unscripted check".into())))
+    }
+
+    fn download(&self, release: &Release, progress: &mut dyn FnMut(Progress), cancel: &AtomicBool) -> Result<Downloaded, UpdateError> {
+        self.log("download");
+        let script = self.downloads.lock().unwrap().pop_front().unwrap_or(Download::Fail(UpdateError::Network("unscripted download".into())));
+        match script {
+            Download::Done => {
+                progress(Progress { done: 5_000_000, total: Some(10_000_000) });
+                progress(Progress { done: 10_000_000, total: Some(10_000_000) });
+                Ok(Downloaded { release: release.clone(), path: PathBuf::from("/nonexistent/installer.dmg") })
+            }
+            Download::Fail(e) => Err(e),
+            Download::UntilCancelled => {
+                // The real download reports about ten times a second; more would only make the test window redraw for nothing.
+                let mut done = 0;
+                while !cancel.load(Ordering::Relaxed) {
+                    done += 1_000_000;
+                    progress(Progress { done: done.min(9_000_000), total: Some(10_000_000) });
+                    self.nap(&|| cancel.load(Ordering::Relaxed));
+                }
+                self.cleaned_up.store(true, Ordering::SeqCst);
+                Err(UpdateError::Cancelled)
+            }
+            Download::FailWhenReleased(e) => {
+                progress(Progress { done: 1_000_000, total: Some(10_000_000) });
+                while !self.release_download.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(e)
+            }
+        }
+    }
+
+    fn stage_and_install(&self, _: &Downloaded, kind: &InstallKind) -> Result<InstallPlan, UpdateError> {
+        self.log(&format!("install {}", if matches!(kind, InstallKind::WindowsInstalled) { "windows" } else { "mac" }));
+        while self.hold_install.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        self.installs.lock().unwrap().pop_front().unwrap_or(Ok(mac_plan()))
+    }
+
+    fn discard(&self, _: Downloaded) {
+        self.log("discard");
+    }
+
+    fn relaunch(&self, _: &InstallPlan) -> io::Result<()> {
+        self.log("relaunch");
+        if self.relaunch_fails.load(Ordering::SeqCst) { Err(io::Error::other("no /usr/bin/open")) } else { Ok(()) }
+    }
+
+    fn install_kind(&self) -> InstallKind {
+        self.kind.lock().unwrap().clone()
+    }
+
+    fn now(&self) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(self.now.load(Ordering::SeqCst))
+    }
+
+    fn quit(&self, _: &mut App) {
+        self.log("quit");
+    }
+}
+
+type Rig<'a> = (Entity<Workbench>, &'a mut VisualTestContext, Arc<Fake>);
+
+fn rig(cx: &mut TestAppContext) -> Rig<'_> {
+    let (wb, cx) = setup(cx);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    (wb, cx, fake)
+}
+
+fn state(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> String {
+    wb.read_with(cx, |wb, _| wb.update_state_for_test())
+}
+
+fn dialog(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> Option<crate::workbench::DialogView> {
+    wb.read_with(cx, |wb, cx| wb.update_dialog_for_test(cx))
+}
+
+fn press(wb: &Entity<Workbench>, cx: &mut VisualTestContext, label: &str) {
+    wb.update_in(cx, |wb, window, cx| wb.press_update_button_for_test(label, window, cx));
+    cx.run_until_parked();
+}
+
+fn manual_check(wb: &Entity<Workbench>, cx: &mut VisualTestContext) {
+    run_command(wb, cx, "Help: Check for Updates…");
+}
+
+fn run_command(wb: &Entity<Workbench>, cx: &mut VisualTestContext, label: &str) {
+    wb.update_in(cx, |wb, window, cx| wb.run_command_for_test(label, window, cx));
+}
+
+fn wait_state(wb: &Entity<Workbench>, cx: &mut VisualTestContext, want: &str) {
+    wait_ticking(cx, want, |cx| state(wb, cx) == want);
+}
+
+fn focused_button(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> Option<String> {
+    cx.update(|window, cx| wb.read(cx).focused_update_button_for_test(window, cx))
+}
+
+fn notice(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> Option<(bool, String)> {
+    wb.read_with(cx, |wb, _| wb.notice_for_test())
+}
+
+fn set_policy(cx: &mut VisualTestContext, policy: crate::update::Policy) {
+    cx.update(|_, cx| cx.global_mut::<crate::settings::Settings>().update_check = policy);
+}
+
+/// A check the user asks for, answered with `release`, ends in the offer.
+fn offered(wb: &Entity<Workbench>, cx: &mut VisualTestContext, fake: &Fake, version: &str) {
+    fake.check_returns(Ok(Some(release(version))));
+    manual_check(wb, cx);
+    wait_state(wb, cx, &format!("available {version}"));
+}
+
+// --- The command and the dialog's states ---
+
+#[gpui::test]
+fn check_for_updates_opens_the_dialog_in_the_checking_state_whatever_the_policy(cx: &mut TestAppContext) {
+    for policy in [crate::update::Policy::Ask, crate::update::Policy::Daily, crate::update::Policy::Manual] {
+        let (wb, cx, fake) = rig(cx);
+        set_policy(cx, policy);
+        fake.check_returns(Ok(None));
+        manual_check(&wb, cx);
+        let d = dialog(&wb, cx).expect("the dialog opens at once");
+        assert_eq!((d.title.as_str(), d.buttons.as_slice()), ("Checking for updates…", ["Cancel".to_string()].as_slice()), "{policy:?}");
+        wait_state(&wb, cx, "up-to-date");
+        assert_eq!(fake.count("check"), 1);
+    }
+}
+
+#[gpui::test]
+fn up_to_date_says_which_version_you_have(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    fake.check_returns(Ok(None));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "up-to-date");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!((d.title.as_str(), d.subtitle.as_deref()), ("Codeyard is up to date", Some("You have 0.1.0, the latest version.")));
+    assert_eq!((d.buttons, d.primary.as_deref()), (vec!["Close".to_string()], Some("Close")));
+    press(&wb, cx, "Close");
+    assert!((dialog(&wb, cx).is_none(), state(&wb, cx)) == (true, "idle".into()), "closing forgets the answer");
+}
+
+#[gpui::test]
+fn an_available_release_shows_its_notes_and_the_four_choices(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    *fake.kind.lock().unwrap() = InstallKind::MacBundle { app: PathBuf::from(APP) };
+    offered(&wb, cx, &fake, "0.2.0");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!((d.title.as_str(), d.subtitle.as_deref()), ("Codeyard 0.2.0 is available", Some("You have 0.1.0")));
+    assert_eq!(d.buttons, ["Skip This Version", "Release Page", "Later", "Install and Restart"]);
+    assert_eq!(d.primary.as_deref(), Some("Install and Restart"));
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()), Some(("0.2.0".into(), "Codeyard 0.2.0 is available. Click for details.".into())));
+}
+
+#[gpui::test]
+fn a_copy_that_cannot_update_itself_gets_a_download_page_button_and_the_reason(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    *fake.kind.lock().unwrap() = InstallKind::Manual;
+    offered(&wb, cx, &fake, "0.2.0");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.buttons, ["Skip This Version", "Later", "Download Page"]);
+    assert_eq!(d.primary.as_deref(), Some("Download Page"));
+    assert!(d.text.contains("This copy isn't installed as an app, so download the new version yourself."), "{}", d.text);
+    // A release without an installer for this system says so instead.
+    let (wb, cx, fake) = rig(cx);
+    let mut r = release("0.2.0");
+    r.asset = None;
+    fake.check_returns(Ok(Some(r)));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "available 0.2.0");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.primary.as_deref(), Some("Download Page"));
+    assert!(d.text.contains("no installer for this system"), "{}", d.text);
+    press(&wb, cx, "Download Page");
+    assert_eq!(cx.opened_url().as_deref(), Some(format!("{}/releases/tag/v0.2.0", env!("CARGO_PKG_REPOSITORY")).as_str()));
+}
+
+#[gpui::test]
+fn the_release_page_button_opens_this_release_in_the_browser(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    press(&wb, cx, "Release Page");
+    assert_eq!(cx.opened_url().as_deref(), Some(format!("{}/releases/tag/v0.2.0", env!("CARGO_PKG_REPOSITORY")).as_str()));
+    assert!(dialog(&wb, cx).is_some(), "the dialog stays; the page is only a place to read more");
+}
+
+#[gpui::test]
+fn install_downloads_installs_and_waits_for_the_restart(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    fake.install_returns(Ok(mac_plan()));
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "ready 0.2.0");
+    assert_eq!(fake.calls(), ["check", "download", "install mac", "discard"]);
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.title, "Update installed");
+    assert!(d.text.contains("Restart Codeyard to finish."), "{}", d.text);
+    assert_eq!((d.buttons, d.primary.as_deref()), (vec!["Later".to_string(), "Restart Now".to_string()], Some("Restart Now")));
+    assert_eq!(wb.read_with(cx, |wb, _| wb.state_value_for_test("update.installed")).as_deref(), Some("0.2.0"));
+    assert_eq!(fake.count("quit"), 0, "nothing quits until the user says so");
+}
+
+#[gpui::test]
+fn downloading_shows_progress_and_the_size_in_megabytes(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::UntilCancelled);
+    press(&wb, cx, "Install and Restart");
+    wait_ticking(cx, "some progress", |cx| dialog(&wb, cx).is_some_and(|d| d.text.contains(" of 9.5 MB")));
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.title, "Downloading Codeyard 0.2.0");
+    assert!(matches!(d.progress, Some(Some(f)) if f > 0. && f <= 1.), "{:?}", d.progress);
+    assert_eq!(d.buttons, ["Cancel", "Hide"]);
+    press(&wb, cx, "Cancel");
+}
+
+#[gpui::test]
+fn cancelling_a_download_returns_to_the_offer_without_an_error(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::UntilCancelled);
+    press(&wb, cx, "Install and Restart");
+    wait_ticking(cx, "downloading", |cx| dialog(&wb, cx).is_some_and(|d| d.text.contains(" of ")));
+    press(&wb, cx, "Cancel");
+    wait_state(&wb, cx, "available 0.2.0");
+    assert!(fake.cleaned_up.load(Ordering::SeqCst));
+    assert_eq!(notice(&wb, cx), None, "cancelling is not a failure");
+    assert_eq!(dialog(&wb, cx).unwrap().title, "Codeyard 0.2.0 is available");
+}
+
+#[gpui::test]
+fn closing_the_dialog_keeps_the_download_going_and_the_status_item_shows_it(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::UntilCancelled);
+    press(&wb, cx, "Install and Restart");
+    wait_ticking(cx, "downloading", |cx| dialog(&wb, cx).is_some_and(|d| d.text.contains(" of ")));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(dialog(&wb, cx).is_none(), "Esc hides the dialog");
+    assert_eq!(state(&wb, cx), "downloading 0.2.0", "…and the download goes on");
+    wait_ticking(cx, "percent in the status bar", |cx| {
+        wb.read_with(cx, |wb, _| wb.update_status_for_test()).is_some_and(|(label, _)| label.starts_with("Updating… ") && label.ends_with('%'))
+    });
+    let (_, tip) = wb.read_with(cx, |wb, _| wb.update_status_for_test()).unwrap();
+    assert_eq!(tip, "Downloading Codeyard 0.2.0. Click for details.");
+    // The item reopens the dialog on the progress, and a second check shows it instead of starting another one.
+    wb.update_in(cx, |wb, window, cx| wb.open_update_dialog_for_test(window, cx));
+    assert_eq!(dialog(&wb, cx).unwrap().title, "Downloading Codeyard 0.2.0");
+    press(&wb, cx, "Hide");
+    manual_check(&wb, cx);
+    assert_eq!(dialog(&wb, cx).unwrap().title, "Downloading Codeyard 0.2.0");
+    assert_eq!(fake.count("check"), 1, "one update operation at a time");
+    press(&wb, cx, "Cancel");
+    wait_state(&wb, cx, "available 0.2.0");
+}
+
+#[gpui::test]
+fn the_install_step_cannot_be_cancelled_and_says_what_it_does(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    fake.hold_install.store(true, Ordering::SeqCst);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "installing 0.2.0");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.title, "Installing Codeyard 0.2.0");
+    assert!(d.text.contains("Verifying and installing…"), "{}", d.text);
+    assert_eq!(d.buttons, ["Hide"], "there is no Cancel once the swap may have started");
+    assert_eq!(d.progress, Some(None), "indeterminate");
+    fake.hold_install.store(false, Ordering::SeqCst);
+    wait_state(&wb, cx, "ready 0.2.0");
+}
+
+// --- Errors ---
+
+#[gpui::test]
+fn a_network_error_offers_try_again_and_the_release_page(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    fake.check_returns(Err(network()));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "error network");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.title, "Couldn't check for updates");
+    assert!(d.text.contains("couldn't reach the update server") && d.text.contains("Could not resolve host"), "plain lead, English detail: {}", d.text);
+    assert_eq!(d.buttons, ["Release Page", "Close", "Try Again"]);
+    // Try Again is a new check; this time it works.
+    fake.check_returns(Ok(None));
+    press(&wb, cx, "Try Again");
+    wait_state(&wb, cx, "up-to-date");
+    assert_eq!(fake.count("check"), 2);
+    // Without a release the page is the list of releases.
+    fake.check_returns(Err(network()));
+    press(&wb, cx, "Close");
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "error network");
+    press(&wb, cx, "Release Page");
+    assert_eq!(cx.opened_url().as_deref(), Some(format!("{}/releases/latest", env!("CARGO_PKG_REPOSITORY")).as_str()));
+}
+
+#[gpui::test]
+fn a_failed_download_retries_the_download_not_the_check(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Fail(network()));
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "error network");
+    assert_eq!(dialog(&wb, cx).unwrap().title, "Couldn't download the update");
+    fake.download_does(Download::Done);
+    press(&wb, cx, "Try Again");
+    wait_state(&wb, cx, "ready 0.2.0");
+    assert_eq!(fake.count("check"), 1, "the release is already known");
+    assert_eq!(fake.count("download"), 2);
+}
+
+#[gpui::test]
+fn an_untrusted_download_installs_nothing_and_only_points_to_the_release_page(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Fail(UpdateError::HashMismatch("Codeyard-0.2.0-macos-arm64.dmg".into())));
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "error untrusted");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.title, "The update couldn't be verified");
+    assert!(d.text.contains("Nothing was installed") && d.text.contains("signed checksums"), "{}", d.text);
+    assert!(d.text.contains("does not match its signed checksum"), "the technical text stays visible: {}", d.text);
+    assert_eq!((d.buttons, d.primary.as_deref()), (vec!["Close".to_string(), "Release Page".to_string()], Some("Release Page")));
+    assert_eq!(fake.count("install mac"), 0);
+}
+
+#[gpui::test]
+fn an_install_error_says_so_and_keeps_a_status_item_after_the_dialog_closes(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    fake.install_returns(Err(UpdateError::NoWritePermission(PathBuf::from("/Applications"))));
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "error install");
+    let d = dialog(&wb, cx).unwrap();
+    assert_eq!(d.title, "The update couldn't be installed");
+    assert!(d.text.contains("cannot write to /Applications"), "{}", d.text);
+    assert_eq!(fake.count("discard"), 1, "the downloaded file is not left behind");
+    press(&wb, cx, "Close");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).map(|s| s.0), Some("Update failed".into()), "someone can still find out why");
+}
+
+#[gpui::test]
+fn a_background_check_that_fails_stays_quiet(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    fake.check_returns(Err(network()));
+    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+    wait_ticking(cx, "the check ran", |_| fake.count("check") == 1);
+    wait_state(&wb, cx, "idle");
+    assert_eq!((notice(&wb, cx), dialog(&wb, cx).is_none()), (None, true), "stderr only: nobody asked");
+}
+
+#[gpui::test]
+fn a_download_that_fails_after_the_dialog_was_hidden_tells_the_user(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::FailWhenReleased(network()));
+    press(&wb, cx, "Install and Restart");
+    wait_ticking(cx, "downloading", |cx| state(&wb, cx) == "downloading 0.2.0");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    fake.release_download.store(true, Ordering::SeqCst);
+    wait_state(&wb, cx, "error network");
+    assert_eq!(notice(&wb, cx), Some((true, "Couldn't download the update".into())));
+    assert!(dialog(&wb, cx).is_none(), "the dialog does not jump back in front of the user's work");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).map(|s| s.0), Some("Update failed".into()));
+}
+
+// --- When something is looked for ---
+
+#[gpui::test]
+fn policy_ask_and_manual_never_make_a_request(cx: &mut TestAppContext) {
+    for policy in [crate::update::Policy::Ask, crate::update::Policy::Manual] {
+        let (wb, cx, fake) = rig(cx);
+        set_policy(cx, policy);
+        for _ in 0..3 {
+            wb.update_in(cx, |wb, window, cx| wb.check_if_due_for_test(window, cx));
+            fake.advance(DAY * 3);
+        }
+        // The startup timers too: the whole first minute, and then days.
+        wb.update_in(cx, |wb, window, cx| wb.schedule_update_checks_for_test(window, cx));
+        for _ in 0..40 {
+            cx.executor().advance_clock(Duration::from_secs(5));
+            cx.run_until_parked();
+        }
+        cx.executor().advance_clock(DAY);
+        cx.run_until_parked();
+        assert_eq!(fake.calls(), Vec::<String>::new(), "{policy:?} made a request by itself");
+    }
+}
+
+#[gpui::test]
+fn policy_daily_checks_when_a_day_has_passed_and_records_only_an_answer(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    set_policy(cx, crate::update::Policy::Daily);
+    // Never checked: due. A network failure is not an answer: it is not recorded, the next start tries again.
+    fake.check_returns(Err(network()));
+    wb.update_in(cx, |wb, window, cx| wb.check_if_due_for_test(window, cx));
+    wait_ticking(cx, "first check", |_| fake.count("check") == 1);
+    wait_state(&wb, cx, "idle");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.state_value_for_test("update.last_check")), None);
+    // Up to date counts.
+    fake.check_returns(Ok(None));
+    wb.update_in(cx, |wb, window, cx| wb.check_if_due_for_test(window, cx));
+    wait_ticking(cx, "second check", |_| fake.count("check") == 2);
+    wait_ticking(cx, "recorded", |cx| wb.read_with(cx, |wb, _| wb.state_value_for_test("update.last_check")).is_some());
+    assert_eq!(wb.read_with(cx, |wb, _| wb.state_value_for_test("update.last_check")), Some("1800000000000".into()));
+    // Within a day: not due. After a day: due again.
+    fake.advance(DAY - Duration::from_secs(1));
+    wb.update_in(cx, |wb, window, cx| wb.check_if_due_for_test(window, cx));
+    cx.run_until_parked();
+    assert_eq!(fake.count("check"), 2);
+    fake.advance(Duration::from_secs(1));
+    fake.check_returns(Ok(None));
+    wb.update_in(cx, |wb, window, cx| wb.check_if_due_for_test(window, cx));
+    wait_ticking(cx, "third check", |_| fake.count("check") == 3);
+}
+
+#[gpui::test]
+fn the_startup_timers_check_daily_after_fifteen_seconds_and_not_before(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    set_policy(cx, crate::update::Policy::Daily);
+    fake.check_returns(Ok(None));
+    wb.update_in(cx, |wb, window, cx| wb.schedule_update_checks_for_test(window, cx));
+    cx.executor().advance_clock(Duration::from_secs(14));
+    cx.run_until_parked();
+    assert_eq!(fake.count("check"), 0, "the window gets a head start");
+    cx.executor().advance_clock(Duration::from_secs(2));
+    wait_ticking(cx, "the daily check", |_| fake.count("check") == 1);
+}
+
+#[gpui::test]
+fn a_found_release_in_the_background_shows_one_notice_per_version_and_a_status_item_but_no_dialog(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    let background = |wb: &Entity<Workbench>, cx: &mut VisualTestContext, fake: &Fake, version: &str| {
+        let calls = fake.count("check");
+        fake.check_returns(Ok(Some(release(version))));
+        wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+        wait_ticking(cx, "the check ran", |_| fake.count("check") == calls + 1);
+        wait_state(wb, cx, &format!("available {version}"));
+    };
+    background(&wb, cx, &fake, "0.2.0");
+    assert_eq!(notice(&wb, cx), Some((false, "Codeyard 0.2.0 is available.".into())));
+    assert!(dialog(&wb, cx).is_none(), "a background check never takes over the window");
+    assert!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).is_some());
+    // The same version found again (the next day, the next start): the item stays, the notice does not come back.
+    wb.update(cx, |wb, cx| wb.set_notice_for_test("something else", false, cx));
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    background(&wb, cx, &fake, "0.2.0");
+    assert_eq!(notice(&wb, cx), Some((false, "something else".into())));
+    // A newer version is news again.
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    background(&wb, cx, &fake, "0.3.0");
+    assert_eq!(notice(&wb, cx), Some((false, "Codeyard 0.3.0 is available.".into())));
+}
+
+// --- Skipping ---
+
+#[gpui::test]
+fn skipping_a_version_silences_background_paths_but_a_manual_check_still_offers_it(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    press(&wb, cx, "Skip This Version");
+    assert_eq!((state(&wb, cx), dialog(&wb, cx).is_none()), ("idle".to_string(), true));
+    assert_eq!(wb.read_with(cx, |wb, _| wb.state_value_for_test("update.skipped")).as_deref(), Some("0.2.0"));
+    assert!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).is_none(), "the item goes away");
+    // A background check finds 0.2.0 again: nothing, not even the notice.
+    wb.update(cx, |wb, cx| wb.set_notice_for_test("x", false, cx));
+    fake.check_returns(Ok(Some(release("0.2.0"))));
+    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+    wait_ticking(cx, "second check", |_| fake.count("check") == 2);
+    wait_state(&wb, cx, "idle");
+    assert_eq!(notice(&wb, cx), Some((false, "x".into())), "no notice for a skipped version");
+    // A newer version is not skipped.
+    fake.check_returns(Ok(Some(release("0.3.0"))));
+    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+    wait_state(&wb, cx, "available 0.3.0");
+    assert_eq!(notice(&wb, cx), Some((false, "Codeyard 0.3.0 is available.".into())));
+    // The user asking offers the skipped one regardless.
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    fake.check_returns(Ok(Some(release("0.2.0"))));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "available 0.2.0");
+    assert_eq!(dialog(&wb, cx).unwrap().title, "Codeyard 0.2.0 is available");
+}
+
+// --- Later after installing ---
+
+#[gpui::test]
+fn later_after_an_install_does_not_offer_the_same_version_again(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "ready 0.2.0");
+    press(&wb, cx, "Later");
+    assert!(dialog(&wb, cx).is_none());
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).map(|s| s.0), Some("Restart to update".into()));
+    // Another window, or the next session of the old process: the check finds 0.2.0, which is already on disk.
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    set_policy(cx, crate::update::Policy::Daily);
+    fake.check_returns(Ok(Some(release("0.2.0"))));
+    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+    wait_state(&wb, cx, "ready 0.2.0");
+    assert_eq!(notice(&wb, cx).filter(|(_, m)| m.contains("is available")), None);
+    // Asking by hand shows the restart button, not the install button.
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    fake.check_returns(Ok(Some(release("0.2.0"))));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "ready 0.2.0");
+    assert_eq!(dialog(&wb, cx).unwrap().primary.as_deref(), Some("Restart Now"));
+    assert_eq!(fake.count("download"), 1);
+}
+
+// --- The question ---
+
+fn settings_dir(name: &str, text: &str) -> PathBuf {
+    let dir = fresh(name);
+    std::fs::write(dir.join("settings.jsonc"), text).unwrap();
+    dir
+}
+
+const COMMENTED: &str = "// my settings\n{\n  // keep this comment\n  \"editor.fontSize\": 15,\n}\n";
+
+#[gpui::test]
+fn the_question_names_what_is_sent_and_has_two_buttons(cx: &mut TestAppContext) {
+    let (wb, cx, _fake) = rig(cx);
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    let d = dialog(&wb, cx).expect("the question is on screen");
+    assert_eq!(d.title, "Check for updates automatically?");
+    assert!(d.text.contains("github.com") && d.text.contains("checksum list") && d.text.contains("nothing about you or your files"), "{}", d.text);
+    assert!(d.text.contains("update.check"), "it says where to change it: {}", d.text);
+    assert_eq!((d.buttons, d.primary.as_deref()), (vec!["Only When I Ask".to_string(), "Check Daily".to_string()], Some("Check Daily")));
+}
+
+#[gpui::test]
+fn check_daily_writes_the_setting_keeps_the_comments_and_checks_now(cx: &mut TestAppContext) {
+    let dir = settings_dir("update-ask-daily", COMMENTED);
+    let (wb, cx) = setup_with_config(cx, &dir);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    fake.check_returns(Ok(None));
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    press(&wb, cx, "Check Daily");
+    let text = std::fs::read_to_string(dir.join("settings.jsonc")).unwrap();
+    assert!(text.contains("\"update.check\": \"daily\""), "{text}");
+    assert!(text.contains("// my settings") && text.contains("// keep this comment") && text.contains("\"editor.fontSize\": 15"), "{text}");
+    assert_eq!(wb.read_with(cx, |_, cx| cx.global::<crate::settings::Settings>().update_check), crate::update::Policy::Daily);
+    assert!(dialog(&wb, cx).is_none());
+    wait_ticking(cx, "the first daily check", |_| fake.count("check") == 1);
+    // Decided: it is never asked again.
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    assert!(dialog(&wb, cx).is_none());
+}
+
+#[gpui::test]
+fn only_when_i_ask_writes_manual_and_makes_no_request(cx: &mut TestAppContext) {
+    let dir = settings_dir("update-ask-manual", COMMENTED);
+    let (wb, cx) = setup_with_config(cx, &dir);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    press(&wb, cx, "Only When I Ask");
+    let text = std::fs::read_to_string(dir.join("settings.jsonc")).unwrap();
+    assert!(text.contains("\"update.check\": \"manual\"") && text.contains("// keep this comment"), "{text}");
+    cx.executor().advance_clock(Duration::from_secs(60));
+    cx.run_until_parked();
+    assert_eq!(fake.calls(), Vec::<String>::new());
+}
+
+/// Esc is not an answer. Nothing is written and nothing is sent; the question comes back, but after 30 days, not at every start.
+#[gpui::test]
+fn esc_on_the_question_writes_nothing_and_snoozes_it_for_thirty_days(cx: &mut TestAppContext) {
+    let dir = settings_dir("update-ask-esc", COMMENTED);
+    let (wb, cx) = setup_with_config(cx, &dir);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(dialog(&wb, cx).is_none(), "Esc closes it");
+    assert_eq!(std::fs::read_to_string(dir.join("settings.jsonc")).unwrap(), COMMENTED, "the user's file is untouched");
+    assert_eq!(wb.read_with(cx, |_, cx| cx.global::<crate::settings::Settings>().update_check), crate::update::Policy::Ask);
+    assert_eq!(fake.calls(), Vec::<String>::new());
+    // The next starts within the month do not ask…
+    fake.advance(DAY * 29);
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    assert!(dialog(&wb, cx).is_none());
+    // …and the one after it does.
+    fake.advance(DAY * 2);
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    assert_eq!(dialog(&wb, cx).unwrap().title, "Check for updates automatically?");
+}
+
+#[gpui::test]
+fn the_question_waits_for_a_quiet_moment_and_ignores_enter_just_after_it_appears(cx: &mut TestAppContext) {
+    let (wb, cx, _fake) = rig(cx);
+    // The window is in the background, or a picker is open (quick open, the palette…): not now.
+    assert!(!wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(false, window, cx)));
+    wb.update_in(cx, |wb, window, cx| wb.open_palette_for_test(window, cx));
+    assert!(!wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    assert!(dialog(&wb, cx).is_none());
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    // A key typed into the editor a moment before cannot answer it.
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(dialog(&wb, cx).is_some(), "Enter is ignored for the first moments");
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(dialog(&wb, cx).is_none(), "afterwards it presses the primary button");
+}
+
+// --- Keyboard ---
+
+#[gpui::test]
+fn tab_walks_the_buttons_and_enter_presses_the_focused_one(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    // Focus starts on the primary button; Tab wraps to the first, Enter on "Skip This Version" skips.
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    assert_eq!(focused_button(&wb, cx).as_deref(), Some("Skip This Version"));
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    assert_eq!(focused_button(&wb, cx).as_deref(), Some("Release Page"));
+    cx.simulate_keystrokes("shift-tab shift-tab");
+    cx.run_until_parked();
+    assert_eq!(focused_button(&wb, cx).as_deref(), Some("Install and Restart"), "shift-tab wraps backwards");
+    cx.simulate_keystrokes("shift-tab");
+    cx.run_until_parked();
+    assert_eq!(focused_button(&wb, cx).as_deref(), Some("Later"));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(dialog(&wb, cx).is_none(), "Enter pressed Later");
+    assert_eq!(state(&wb, cx), "available 0.2.0", "Later leaves the offer in the status bar");
+}
+
+#[gpui::test]
+fn enter_installs_and_esc_cancels_a_check(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::UntilCancelled);
+    cx.simulate_keystrokes("enter");
+    wait_ticking(cx, "downloading", |cx| state(&wb, cx) == "downloading 0.2.0");
+    press(&wb, cx, "Cancel");
+    wait_state(&wb, cx, "available 0.2.0");
+    // A check in progress: Esc is Cancel, and its answer is dropped.
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    fake.check_returns(Ok(Some(release("0.2.0"))));
+    manual_check(&wb, cx);
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!((state(&wb, cx), dialog(&wb, cx).is_none()), ("idle".to_string(), true));
+    cx.executor().advance_clock(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_millis(100));
+    cx.run_until_parked();
+    assert_eq!(state(&wb, cx), "idle", "the late answer of a cancelled check changes nothing");
+}
+
+#[gpui::test]
+fn focus_returns_to_where_it_was_when_the_dialog_closes(cx: &mut TestAppContext) {
+    let dir = project("update-focus");
+    let (wb, cx, fake) = rig(cx);
+    open_in(&wb, &dir.join("src/main.rs"), cx);
+    cx.simulate_input("a");
+    offered(&wb, cx, &fake, "0.2.0");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.simulate_input("b");
+    let text = wb.read_with(cx, |wb, cx| wb.active_editor_entity().map(|e| e.read(cx).text()));
+    assert_eq!(text.as_deref(), Some("abfn main() {}\n"), "typing goes to the editor again");
+}
+
+// --- Restart and quit ---
+
+#[gpui::test]
+fn restart_now_starts_the_new_version_before_it_quits(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "ready 0.2.0");
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.calls().iter().rev().take(2).rev().cloned().collect::<Vec<_>>(), ["relaunch", "quit"], "{:?}", fake.calls());
+}
+
+#[gpui::test]
+fn a_restart_that_cannot_start_the_new_version_does_not_quit(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "ready 0.2.0");
+    fake.relaunch_fails.store(true, Ordering::SeqCst);
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.count("quit"), 0, "the editor stays");
+    let (error, message) = notice(&wb, cx).unwrap();
+    assert!(error && message.contains("no /usr/bin/open") && message.contains("open Codeyard again"), "{message}");
+}
+
+#[gpui::test]
+fn restarting_with_unsaved_work_and_hot_exit_off_asks_first(cx: &mut TestAppContext) {
+    let dir = project("update-restart-ask");
+    let (wb, cx, fake) = rig(cx);
+    open_in(&wb, &dir.join("src/main.rs"), cx);
+    cx.update(|_, cx| cx.global_mut::<crate::settings::Settings>().hot_exit = false);
+    cx.simulate_input("// unsaved\n");
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "ready 0.2.0");
+    press(&wb, cx, "Restart Now");
+    let (title, detail) = cx.pending_prompt().expect("the unsaved-changes question");
+    assert_eq!(title, "You have unsaved changes");
+    assert_eq!(detail, "Restarting loses everything since the last save.");
+    assert_eq!(fake.count("relaunch") + fake.count("quit"), 0);
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(fake.count("quit"), 0, "Cancel keeps everything as it was");
+    press(&wb, cx, "Restart Now");
+    cx.simulate_prompt_answer("Restart without saving");
+    cx.run_until_parked();
+    assert_eq!(fake.calls().iter().rev().take(2).rev().cloned().collect::<Vec<_>>(), ["relaunch", "quit"]);
+}
+
+/// The restart path goes through hot exit: what was typed and not saved is there after the restart.
+#[gpui::test]
+fn unsaved_edits_survive_the_restart_after_an_update(cx: &mut TestAppContext) {
+    let home = fresh("update-hot-exit-home");
+    let dir = project("update-hot-exit");
+    let (wb, cx) = setup_persistent(cx, &home);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    open(&wb, &dir.join("src/main.rs"), cx);
+    cx.simulate_input("// not saved\n");
+    cx.executor().advance_clock(Duration::from_secs(2)); // the backup timer
+    cx.run_until_parked();
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "ready 0.2.0");
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.count("quit"), 1, "no question: hot exit is on");
+    // The new process opens the same state.
+    let wb2 = crate::qa_workbench_tests::restart_with(wb, cx, &home, crate::settings::Startup::Continue);
+    assert_eq!(std::fs::read_to_string(dir.join("src/main.rs")).unwrap(), "fn main() {}\n", "the file on disk is untouched");
+    let editor = wb2.read_with(cx, |wb, _| wb.active_editor_entity()).expect("the tab comes back");
+    assert_eq!(editor.read_with(cx, |e, _| e.text()), "// not saved\nfn main() {}\n");
+    assert!(wb2.read_with(cx, |wb, cx| wb.any_dirty(cx)), "still unsaved");
+}
+
+/// Windows has no Ready state: the setup program is already running, so the app leaves at once through the normal quit path.
+#[gpui::test]
+fn on_windows_the_installer_ends_with_a_restart_not_a_ready_state(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    *fake.kind.lock().unwrap() = InstallKind::WindowsInstalled;
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    fake.hold_install.store(true, Ordering::SeqCst);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "installing 0.2.0");
+    assert!(dialog(&wb, cx).unwrap().text.contains("Installing — Codeyard will restart."));
+    fake.install_returns(Ok(InstallPlan::WindowsInstaller));
+    fake.hold_install.store(false, Ordering::SeqCst);
+    wait_ticking(cx, "the app quits", |_| fake.count("quit") == 1);
+    assert_eq!(fake.calls(), ["check", "download", "install windows", "relaunch", "quit"], "the setup file is kept: it is running");
+}
+
+#[gpui::test]
+fn quitting_during_a_download_cancels_it_and_waits_for_the_clean_up(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::UntilCancelled);
+    press(&wb, cx, "Install and Restart");
+    wait_ticking(cx, "downloading", |cx| dialog(&wb, cx).is_some_and(|d| d.text.contains(" of ")));
+    let exited = wb.update(cx, |wb, _| wb.cancel_update_for_quit_for_test()).expect("a download was running");
+    wait_ticking(cx, "the download thread is done", |_| exited.load(Ordering::SeqCst));
+    assert!(fake.cleaned_up.load(Ordering::SeqCst), "it stopped the transfer and removed what it had");
+    assert_eq!(fake.count("install mac"), 0, "nothing is installed after a quit");
+}
+
+#[gpui::test]
+fn quitting_while_the_app_is_being_replaced_asks_first(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Done);
+    fake.hold_install.store(true, Ordering::SeqCst);
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "installing 0.2.0");
+    cx.simulate_keystrokes("cmd-q");
+    cx.run_until_parked();
+    let (title, _) = cx.pending_prompt().expect("the question");
+    assert_eq!(title, "Codeyard is still installing an update");
+    cx.simulate_prompt_answer("Keep Waiting");
+    cx.run_until_parked();
+    assert_eq!(fake.count("quit"), 0);
+    cx.simulate_keystrokes("cmd-q");
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Quit Anyway");
+    cx.run_until_parked();
+    assert_eq!(fake.count("quit"), 1);
+    fake.hold_install.store(false, Ordering::SeqCst);
+}
+
+// --- Other windows, language, accessibility ---
+
+#[gpui::test]
+fn a_second_window_shows_the_update_that_is_already_running_instead_of_starting_another(cx: &mut TestAppContext) {
+    // Real windows have the workbench as their root view (the `setup` helper wraps it), which is what other windows look for.
+    crate::qa_workbench_tests::globals(cx);
+    let open_window = |cx: &mut TestAppContext| {
+        cx.update(|app| {
+            app.open_window(gpui::WindowOptions::default(), |window, cx| cx.new(|cx| Workbench::with_state(state::State::in_memory().ok(), None, window, cx)))
+                .expect("a window")
+        })
+    };
+    let (first, second) = (open_window(cx), open_window(cx));
+    let (fake, other) = (Fake::new(), Fake::new());
+    let state_of = |cx: &mut TestAppContext| first.read_with(cx, |wb, _| wb.update_state_for_test()).unwrap();
+    let wait = |cx: &mut TestAppContext, want: &str| {
+        let start = std::time::Instant::now();
+        while state_of(cx) != want {
+            assert!(start.elapsed() < Duration::from_secs(10), "timeout: {want}, now {}", state_of(cx));
+            cx.run_until_parked();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    first
+        .update(cx, |wb, window, cx| {
+            window.focus(&wb.focus_handle(cx));
+            wb.set_update_backend_for_test(fake.clone());
+            fake.check_returns(Ok(Some(release("0.2.0"))));
+            wb.run_command_for_test("Help: Check for Updates…", window, cx);
+        })
+        .unwrap();
+    wait(cx, "available 0.2.0");
+    fake.download_does(Download::UntilCancelled);
+    first.update(cx, |wb, window, cx| wb.press_update_button_for_test("Install and Restart", window, cx)).unwrap();
+    wait(cx, "downloading 0.2.0");
+    first.update(cx, |wb, window, cx| wb.press_update_button_for_test("Hide", window, cx)).unwrap();
+    // The second window asks for a check: nothing starts there, the first window shows what is going on.
+    second
+        .update(cx, |wb, window, cx| {
+            window.focus(&wb.focus_handle(cx));
+            wb.set_update_backend_for_test(other.clone());
+            wb.run_command_for_test("Help: Check for Updates…", window, cx);
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(other.calls(), Vec::<String>::new());
+    assert_eq!(first.read_with(cx, |wb, cx| wb.update_dialog_for_test(cx)).unwrap().map(|d| d.title).as_deref(), Some("Downloading Codeyard 0.2.0"));
+    assert_eq!(second.read_with(cx, |wb, cx| wb.update_dialog_for_test(cx)).unwrap(), None, "and the second window has no dialog of its own");
+    first.update(cx, |wb, window, cx| wb.press_update_button_for_test("Cancel", window, cx)).unwrap();
+    wait(cx, "available 0.2.0");
+}
+
+#[gpui::test]
+fn the_dialog_and_the_status_item_follow_the_interface_language(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    let _tr = crate::i18n::LangGuard::set("tr");
+    offered(&wb, cx, &fake, "0.2.0");
+    let d = dialog(&wb, cx).unwrap();
+    assert_ne!(d.title, "Codeyard 0.2.0 is available");
+    assert!(d.title.contains("0.2.0"), "{}", d.title);
+    assert!(d.buttons.iter().all(|b| !["Skip This Version", "Release Page", "Later", "Install and Restart"].contains(&b.as_str())), "{:?}", d.buttons);
+    let (_, tip) = wb.read_with(cx, |wb, _| wb.update_status_for_test()).unwrap();
+    assert!(!tip.starts_with("Codeyard 0.2.0 is available"), "{tip}");
+}
+
+#[gpui::test]
+fn the_accessibility_tree_has_a_modal_dialog_with_progress_and_buttons(cx: &mut TestAppContext) {
+    use accesskit::Role;
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::UntilCancelled);
+    press(&wb, cx, "Install and Restart");
+    wait_ticking(cx, "downloading", |cx| dialog(&wb, cx).is_some_and(|d| d.text.contains(" of ")));
+    let snapshot = cx.update(|window, cx| wb.read(cx).a11y_snapshot(window, cx));
+    let tree = accesskit_consumer::Tree::new(snapshot.to_tree(), true);
+    let state = tree.state();
+    let dialog = state.root().children().find(|n| n.role() == Role::Dialog).expect("a dialog node");
+    assert_eq!(dialog.label().as_deref(), Some("Downloading Codeyard 0.2.0"));
+    assert!(dialog.is_modal());
+    let kids: Vec<_> = dialog.children().collect();
+    let bar = kids.iter().find(|n| n.role() == Role::ProgressIndicator).expect("progress");
+    assert!(bar.numeric_value().is_some_and(|v| (0. ..=100.).contains(&v)) && bar.max_numeric_value() == Some(100.));
+    let labels: Vec<_> = kids.iter().filter(|n| n.role() == Role::Button).filter_map(|n| n.label()).collect();
+    assert_eq!(labels, ["Cancel", "Hide"]);
+    assert_eq!(state.focus().map(|n| n.role()), Some(Role::Button), "the focused button is the focus of the tree");
+    // The status bar names the update too.
+    assert!(snapshot.status.iter().any(|s| s == "Downloading Codeyard 0.2.0. Click for details."), "{:?}", snapshot.status);
+    press(&wb, cx, "Cancel");
+}

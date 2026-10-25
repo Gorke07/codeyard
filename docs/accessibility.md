@@ -9,7 +9,12 @@ GPUI 0.2.2 has no accessibility tree of its own. Codeyard adds one on macOS with
 - `Window` → `Tree` "Explorer" (one `TreeItem` per visible row: name, level, selected, expanded, set position;
   capped at 5,000 rows) → `MultilineTextInput` for the active editor (file name, `(modified)`, a text window around
   the caret, text runs of at most 200 characters, the primary selection) → `Status` "Status bar" (one label per item).
-- Actions: `Focus` (editor, explorer, row), `Click` on a row (select and open), `SetTextSelection` on the editor.
+- While the update dialog (or the first-run question about update checks) is open: a modal `Dialog` with its title and text,
+  a `ProgressIndicator` (0 to 100 while a download has a known size, without a value otherwise) and one `Button` per choice in
+  tab order; the focused button is the tree's focus. The status bar names the update item. Everything in it is also reachable by
+  keyboard (Tab, Shift+Tab, Enter, Space, Esc).
+- Actions: `Focus` (editor, explorer, row, dialog button), `Click` on a row (select and open) or a dialog button,
+  `SetTextSelection` on the editor.
 - Accessibility of the interface that does not need a tree: two high-contrast themes, a contrast test for every
   theme, every command reachable from the palette and the keyboard.
 
@@ -56,7 +61,8 @@ The CPU cost of the 250 ms snapshot loop has not been measured.
 - The editor exposes a window of lines around the caret, not the whole document, so absolute offsets differ from
   file offsets in long files. Primary selection only; no multi-cursor, folding, wrapped lines, RTL or CRLF handling.
 - Not exposed: tabs, sidebar panels other than the explorer, bottom panel, terminal, find bar, pickers and the command
-  palette, completion popup, hover, settings, dialogs, notices (these should be live regions). Only the first
+  palette, completion popup, hover, settings, other dialogs, notices (these should be live regions; an update notice is
+  only in the status bar's text). Only the first
   explorer root is exposed.
 - No scroll actions, no `Blur`, no explicit expand/collapse action (Click toggles).
 - Windows (UI Automation) and Linux (AT-SPI) are not implemented. The same AccessKit tree applies; Windows needs an

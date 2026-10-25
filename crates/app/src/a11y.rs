@@ -19,7 +19,10 @@ const ROOT: NodeId = NodeId(1);
 const EXPLORER: NodeId = NodeId(2);
 const EDITOR: NodeId = NodeId(3);
 const STATUS: NodeId = NodeId(4);
+const UPDATE_DIALOG: NodeId = NodeId(5);
+const UPDATE_PROGRESS: NodeId = NodeId(6);
 const STATUS_ITEM: u64 = 0x10_0000;
+const UPDATE_BUTTON: u64 = 0x20_0000;
 const ROW_BASE: u64 = 0x2_0000_0000;
 const RUN_BASE: u64 = 0x4_0000_0000;
 /// Window shown to AT in the editor: this many lines before/after the cursor line.
@@ -79,6 +82,18 @@ pub enum FocusSnap {
     Editor,
 }
 
+/// The update dialog (or the first-run question) while it is open.
+#[derive(Clone, PartialEq, Debug)]
+pub struct DialogSnap {
+    pub title: String,
+    pub description: String,
+    /// `Some(None)`: working, no end in sight; `Some(Some(f))`: `f` of 1 done.
+    pub progress: Option<Option<f64>>,
+    /// Button labels in tab order, and the focused one.
+    pub buttons: Vec<String>,
+    pub focused: Option<usize>,
+}
+
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Snapshot {
     pub title: String,
@@ -86,6 +101,7 @@ pub struct Snapshot {
     pub rows_total: usize,
     pub editor: Option<EditorSnap>,
     pub status: Vec<String>,
+    pub dialog: Option<DialogSnap>,
     pub focus: FocusSnap,
 }
 
@@ -239,10 +255,43 @@ impl Snapshot {
         nodes.push((STATUS, status));
         kids.push(STATUS);
 
+        // The update dialog is modal: while it is open it is the only thing a screen reader should land on.
+        if let Some(d) = &self.dialog {
+            let mut dialog = Node::new(Role::Dialog);
+            dialog.set_label(d.title.clone());
+            dialog.set_description(d.description.clone());
+            dialog.set_modal();
+            let mut children = Vec::new();
+            if let Some(progress) = d.progress {
+                let mut bar = Node::new(Role::ProgressIndicator);
+                bar.set_label(t("Progress"));
+                if let Some(fraction) = progress {
+                    bar.set_min_numeric_value(0.);
+                    bar.set_max_numeric_value(100.);
+                    bar.set_numeric_value((fraction * 100.).round());
+                }
+                children.push(UPDATE_PROGRESS);
+                nodes.push((UPDATE_PROGRESS, bar));
+            }
+            for (i, label) in d.buttons.iter().enumerate() {
+                let id = NodeId(UPDATE_BUTTON + i as u64);
+                let mut b = Node::new(Role::Button);
+                b.set_label(label.clone());
+                b.add_action(Action::Click);
+                b.add_action(Action::Focus);
+                children.push(id);
+                nodes.push((id, b));
+            }
+            dialog.set_children(children);
+            nodes.push((UPDATE_DIALOG, dialog));
+            kids.push(UPDATE_DIALOG);
+        }
+
         root.set_children(kids);
         nodes.push((ROOT, root));
 
         let focus = match self.focus {
+            _ if self.dialog.is_some() => self.dialog.as_ref().and_then(|d| d.focused).map_or(UPDATE_DIALOG, |i| NodeId(UPDATE_BUTTON + i as u64)),
             FocusSnap::Editor if self.editor.is_some() => EDITOR,
             FocusSnap::Explorer => self.rows.iter().find(|r| r.selected).map_or(EXPLORER, |r| NodeId(r.id)),
             _ => ROOT,
@@ -314,9 +363,23 @@ impl Workbench {
             status.push(e.language_label().to_string());
             status.push(e.encoding().label().to_string());
         }
+        if let Some(item) = self.update_status_item() {
+            status.push(item.tip.to_string());
+        }
         if let Some(Notice::Info(m)) = &self.notice {
             status.push(m.to_string());
         }
+        let dialog = self.dialog_model(cx).map(|model| DialogSnap {
+            description: model.text().split_once('\n').map_or(String::new(), |(_, rest)| rest.to_string()),
+            progress: match &model.body {
+                super::update_glue::Body::Progress { fraction, .. } => Some(fraction.map(f64::from)),
+                super::update_glue::Body::Working(_) => Some(None),
+                _ => None,
+            },
+            focused: self.update.focus.iter().position(|h| h.is_focused(window)).filter(|i| *i < model.buttons.len()),
+            buttons: model.buttons.iter().map(|b| b.label.to_string()).collect(),
+            title: model.title.to_string(),
+        });
 
         let focus = if tree.focus_handle(cx).is_focused(window) {
             FocusSnap::Explorer
@@ -325,7 +388,7 @@ impl Workbench {
         } else {
             FocusSnap::Window
         };
-        Snapshot { title, rows, rows_total, editor, status, focus }
+        Snapshot { title, rows, rows_total, editor, status, dialog, focus }
     }
 
     /// Action from AT (main thread, in the GPUI context).
@@ -343,6 +406,20 @@ impl Workbench {
                 window.focus(&tree.read(cx).focus_handle(cx));
                 if req.action == Action::Click {
                     tree.update(cx, |t, cx| t.a11y_activate(ix, cx));
+                }
+            }
+            (Action::Focus | Action::Click, id) if id.0 >= UPDATE_BUTTON && id.0 < ROW_BASE => {
+                let (Some(snap), Some(index)) = (&last.dialog, id.0.checked_sub(UPDATE_BUTTON).map(|i| i as usize)) else { return };
+                // The tree may be a quarter of a second old: act only if that button is still there under the same name.
+                let Some(model) = self.dialog_model(cx) else { return };
+                let Some(button) = model.buttons.get(index).filter(|b| snap.buttons.get(index).is_some_and(|l| *l == b.label.as_ref())) else { return };
+                match req.action {
+                    Action::Click => self.update_action(button.action, window, cx),
+                    _ => {
+                        if let Some(handle) = self.update.focus.get(index) {
+                            window.focus(handle);
+                        }
+                    }
                 }
             }
             (Action::SetTextSelection, EDITOR) => {
@@ -513,6 +590,7 @@ mod tests {
             rows_total: 2,
             editor: Some(EditorSnap { name: "main.rs".into(), dirty: false, runs, selection: (3, 7), total_lines: 3, first_line: 0 }),
             status: vec!["Local".into(), "Ln 1, Col 4 (4 selected)".into()],
+            dialog: None,
             focus: FocusSnap::Editor,
         }
     }

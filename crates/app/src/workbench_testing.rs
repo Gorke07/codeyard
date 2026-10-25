@@ -469,4 +469,129 @@ impl Workbench {
     pub fn set_spell_root_for_test(&mut self, root: std::path::PathBuf) {
         self.lsp.spell_root = Some(root);
     }
+
+    // --- Updates ---
+
+    pub fn set_update_backend_for_test(&mut self, backend: Arc<dyn crate::update_backend::UpdateBackend>) {
+        self.update.backend = backend;
+    }
+
+    /// The updater's state as one line: `idle`, `checking`, `up-to-date`, `available 0.2.0`, `downloading 0.2.0`, `installing 0.2.0`,
+    /// `ready 0.2.0` or `error <kind>`.
+    pub fn update_state_for_test(&self) -> String {
+        use update_glue::UpdateState as S;
+        match &self.update.state {
+            S::Idle => "idle".into(),
+            S::Checking => "checking".into(),
+            S::UpToDate => "up-to-date".into(),
+            S::Available(r) => format!("available {}", r.version),
+            S::Downloading { release, .. } => format!("downloading {}", release.version),
+            S::Installing { release } => format!("installing {}", release.version),
+            S::Ready { version, .. } => format!("ready {version}"),
+            S::Error(f) => format!("error {:?}", f.kind).to_lowercase(),
+        }
+    }
+
+    /// What the update dialog shows right now (`None`: closed).
+    pub fn update_dialog_for_test(&self, cx: &App) -> Option<DialogView> {
+        use update_glue::Body;
+        let m = self.dialog_model(cx)?;
+        Some(DialogView {
+            title: m.title.to_string(),
+            subtitle: m.subtitle.as_ref().map(|s| s.to_string()),
+            text: m.text(),
+            progress: match &m.body {
+                Body::Progress { fraction, .. } => Some(*fraction),
+                Body::Working(_) => Some(None),
+                _ => None,
+            },
+            buttons: m.buttons.iter().map(|b| b.label.to_string()).collect(),
+            primary: m.buttons.iter().find(|b| b.primary).map(|b| b.label.to_string()),
+        })
+    }
+
+    /// Press the dialog button with this label (as a click would).
+    pub fn press_update_button_for_test(&mut self, label: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let action =
+            self.dialog_model(cx).and_then(|m| m.buttons.into_iter().find(|b| b.label == label)).unwrap_or_else(|| panic!("no “{label}” button")).action;
+        self.update_action(action, window, cx);
+    }
+
+    /// The status bar item: (label, tooltip).
+    pub fn update_status_for_test(&self) -> Option<(String, String)> {
+        self.update_status_item().map(|i| (i.label.to_string(), i.tip.to_string()))
+    }
+
+    pub fn open_update_dialog_for_test(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_update_dialog(window, cx);
+    }
+
+    pub fn check_if_due_for_test(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.check_if_due(window, cx);
+    }
+
+    pub fn background_check_for_test(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.begin_check(false, window, cx);
+    }
+
+    /// The first-run question; `false`: something was in the way.
+    pub fn ask_update_policy_for_test(&mut self, window_active: bool, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.ask_update_policy(window_active, window, cx)
+    }
+
+    pub fn schedule_update_checks_for_test(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.schedule_update_checks(window, cx);
+    }
+
+    /// What quitting does to a running update: the flag that says its thread is done.
+    pub fn cancel_update_for_quit_for_test(&mut self) -> Option<Arc<std::sync::atomic::AtomicBool>> {
+        self.cancel_update_for_quit()
+    }
+
+    /// Forget everything the updater knows (a new session of the same window).
+    pub fn reset_update_for_test(&mut self) {
+        self.update.run = None;
+        self.update.state = update_glue::UpdateState::Idle;
+        self.update.dialog = update_glue::Dialog::Closed;
+    }
+
+    /// Label of the dialog button that has the keyboard focus.
+    pub fn focused_update_button_for_test(&self, window: &Window, cx: &App) -> Option<String> {
+        let model = self.dialog_model(cx)?;
+        let ix = self.update.focus.iter().position(|h| h.is_focused(window))?;
+        model.buttons.get(ix).map(|b| b.label.to_string())
+    }
+
+    pub fn open_palette_for_test(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_palette("", window, cx);
+    }
+
+    pub fn state_value_for_test(&self, key: &str) -> Option<String> {
+        self.persist.state.as_ref().and_then(|s| s.get(key))
+    }
+
+    pub fn set_state_value_for_test(&self, key: &str, value: &str) {
+        self.persist.state.as_ref().expect("a state database").set(key, value).expect("state write");
+    }
+
+    pub fn notice_for_test(&self) -> Option<(bool, String)> {
+        match &self.notice {
+            Some(Notice::Info(m)) => Some((false, m.to_string())),
+            Some(Notice::Error(m)) => Some((true, m.to_string())),
+            None => None,
+        }
+    }
+}
+
+/// What a test sees of the update dialog.
+#[derive(Debug, PartialEq)]
+pub struct DialogView {
+    pub title: String,
+    pub subtitle: Option<String>,
+    /// Title and body text, one line each.
+    pub text: String,
+    /// `Some(None)`: working without a known end.
+    pub progress: Option<Option<f32>>,
+    pub buttons: Vec<String>,
+    pub primary: Option<String>,
 }

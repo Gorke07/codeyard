@@ -89,16 +89,22 @@ mod terminals_glue;
 #[cfg(test)]
 #[path = "workbench_testing.rs"]
 mod testing_glue;
+#[cfg(test)]
+pub(crate) use testing_glue::DialogView;
 #[path = "workbench_theme.rs"]
 mod theme_glue;
 #[path = "workbench_transfer.rs"]
 mod transfer;
+#[path = "workbench_update.rs"]
+mod update_glue;
 #[path = "workbench_view_editor.rs"]
 mod view_editor_glue;
 #[path = "workbench_view_explorer.rs"]
 mod view_explorer_glue;
 #[path = "workbench_view_status.rs"]
 mod view_status_glue;
+#[path = "workbench_view_update.rs"]
+mod view_update_glue;
 #[path = "workbench_watch.rs"]
 mod watch_glue;
 #[path = "workbench_welcome.rs"]
@@ -283,6 +289,11 @@ actions!(
         GoToLastEdit,
         NewScratchFile,
         ShowAbout,
+        CheckForUpdates,
+        UpdateDismiss,
+        UpdateConfirm,
+        UpdateFocusNext,
+        UpdateFocusPrev,
         ShowDiskAccess,
         FollowFile,
         AddSshHost,
@@ -562,6 +573,8 @@ pub struct Workbench {
     remote: state_glue::RemoteState,
     /// Explorer roots, clipboard and favorites.
     roots: state_glue::RootsState,
+    /// In-app updates: state, dialog and worker thread (see workbench_update.rs).
+    update: state_glue::UpdateUi,
     /// Editor groups: tabs, separate tab views (diff, large file, page) and startup state.
     tabs: state_glue::TabsState,
     focus_handle: FocusHandle,
@@ -852,6 +865,15 @@ impl Workbench {
                     }
                 }
             }),
+            // A download in progress is cancelled and its partial file removed before the process ends.
+            cx.on_app_quit(|this, cx| {
+                let wait = this.cancel_update_for_quit().map(|exited| Workbench::wait_for_update_thread(exited, cx));
+                async move {
+                    if let Some(wait) = wait {
+                        wait.await;
+                    }
+                }
+            }),
             cx.observe_window_appearance(window, |this, window, cx| {
                 if this.theme_choice == THEME_AUTO {
                     let choice = this.theme_choice.clone();
@@ -860,6 +882,7 @@ impl Workbench {
             }),
         ];
         let (recent, pinned) = state.as_ref().map(projects::load_recent).unwrap_or_default();
+        let dev = std::env::var_os("CODEYARD_DEV").is_some() || cfg!(debug_assertions);
         let mut themes = themes::builtin();
         let mut notice = None;
         if let Some(dir) = user_theme_dir() {
@@ -897,7 +920,7 @@ impl Workbench {
             title: String::new(),
             notice_seen: None,
             notice_task: None,
-            dev: std::env::var_os("CODEYARD_DEV").is_some() || cfg!(debug_assertions),
+            dev,
             themes,
             theme_choice: theme_choice.clone(),
             overlay: None,
@@ -1039,6 +1062,7 @@ impl Workbench {
                 pending_reveal: None,
                 tab_scroll: gpui::ScrollHandle::new(),
             },
+            update: state_glue::UpdateUi::new(dev, cx),
             focus_handle: cx.focus_handle(),
             _subs: subs,
         };
@@ -2340,25 +2364,31 @@ impl Workbench {
     /// Hot exit: back up and quit. Asks if it's off and a dirty file exists.
     /// ⌘Q: all windows are backed up; asks if hot exit is off and any file is dirty.
     pub fn confirm_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_quit_with(update_glue::QuitMode::Quit, window, cx);
+    }
+
+    /// Quit, or restart into the version that was just installed: both go through hot exit, so unsaved work survives either.
+    fn confirm_quit_with(&mut self, mode: update_glue::QuitMode, window: &mut Window, cx: &mut Context<Self>) {
+        if self.hold_quit_for_install(mode.clone(), window, cx) {
+            return;
+        }
         let me = window.window_handle();
         let mut ok = self.prepare_quit(cx);
         for w in cx.windows().into_iter().filter(|w| *w != me).filter_map(|w| w.downcast::<Workbench>()) {
             ok &= w.update(cx, |wb, _, cx| wb.prepare_quit(cx)).unwrap_or(true);
         }
         if ok {
-            cx.quit();
+            self.finish_quit(mode, cx);
             return;
         }
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            crate::i18n::t("You have unsaved changes"),
-            Some(crate::i18n::t("Quitting loses everything since the last save.")),
-            &[crate::i18n::t("Quit without saving"), crate::i18n::t("Cancel")],
-            cx,
-        );
-        cx.spawn(async move |_, cx| {
+        let (detail, leave) = match mode {
+            update_glue::QuitMode::Quit => (crate::i18n::t("Quitting loses everything since the last save."), crate::i18n::t("Quit without saving")),
+            update_glue::QuitMode::Restart(_) => (crate::i18n::t("Restarting loses everything since the last save."), crate::i18n::t("Restart without saving")),
+        };
+        let answer = window.prompt(PromptLevel::Warning, crate::i18n::t("You have unsaved changes"), Some(detail), &[leave, crate::i18n::t("Cancel")], cx);
+        cx.spawn(async move |this, cx| {
             if answer.await == Ok(0) {
-                cx.update(|cx| cx.quit()).ok();
+                this.update(cx, |this, cx| this.finish_quit(mode, cx)).ok();
             }
         })
         .detach();

@@ -293,6 +293,7 @@ impl Render for Workbench {
             .on_action(cx.listener(Self::select_icon_theme))
             .on_action(cx.listener(Self::show_welcome))
             .on_action(cx.listener(Self::show_about))
+            .on_action(cx.listener(Self::check_for_updates))
             .on_action(cx.listener(Self::show_disk_access))
             .on_action(cx.listener(Self::follow_file))
             .on_action(cx.listener(Self::add_ssh_host))
@@ -452,6 +453,7 @@ impl Render for Workbench {
             )
             .when(self.chrome.zen.is_none() && cx.global::<Settings>().status_bar, |d| d.child(self.status_bar(&p, cx)))
             .children(self.error_toast(&p, cx))
+            .children(self.update_dialog(&p, cx))
             .when_some(
                 self.menu.as_ref().map(|m| (m.menu.clone(), m.position, m.app_path.is_some(), m.menu.read(cx).anchor())),
                 |d, (menu, position, application, anchor)| {

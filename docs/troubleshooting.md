@@ -45,6 +45,17 @@ installed **on the server**. Change or disable one with `lsp.servers`; it is ign
 repositories): run `gh auth login` or set `GITHUB_TOKEN`. A checkout that refuses because of local changes tells you to commit or
 stash first.
 
+## Updates
+
+| What you see | What it means and what to do |
+| --- | --- |
+| "Couldn't check for updates" / "Couldn't download the update" | Codeyard could not reach GitHub (offline, a proxy, a firewall); the line under the message is `curl`'s own. **Try Again**, or take the installer from **Release Page**. A download can also fail because a newer release replaced the one it was fetching: check again. |
+| "The update couldn't be verified" | Nothing was installed. What came from the server did not match the signed checksums (a captured connection, a broken mirror, a release published without its signature) and was discarded. Do not retry blindly: download from the release page and compare with `scripts/verify-release.sh` (see [SECURITY.md](../SECURITY.md)). |
+| "The update couldn't be installed" and "cannot write to /Applications" | The app is in a folder your account cannot change. Install by hand from the release page, or move Codeyard to a folder you own. |
+| **Download Page** instead of *Install and Restart* | This copy cannot replace itself (debug build, bare binary, Linux, Windows ZIP, read-only location); the dialog gives the reason. Download the new version and replace the old one yourself. |
+| "Update installed" but the old version still runs | Restart: the dialog's **Restart Now** quits and opens the new version; *Later* only postpones it. |
+| You were never asked about update checks | Debug builds and windows started with `--do`/`--panel` never ask; closing the question with Esc snoozes it for 30 days. Set `"update.check"` yourself or use *Help: Check for Updates…*. |
+
 ## Reporting a problem
 
 If Codeyard panics it writes a report to the `crashes/` folder next to its state database (see `CODEYARD_STATE_DIR` in

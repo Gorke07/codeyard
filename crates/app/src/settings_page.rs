@@ -51,7 +51,7 @@ pub fn category_of(key: &str) -> &'static str {
         "search" => "Search",
         "git" => "Git",
         "terminal" => "Terminal",
-        "window" => "Window",
+        "window" | "update" => "Window",
         _ => "Remote & Languages",
     }
 }

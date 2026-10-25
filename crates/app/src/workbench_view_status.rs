@@ -208,5 +208,6 @@ impl Workbench {
                             .on_click(cx.listener(|this, _, window, cx| this.show_language_picker(window, cx))),
                     )
             })
+            .when_some(self.update_status_item(), |d, item| d.child(self.update_status_button(item, p, cx)))
     }
 }

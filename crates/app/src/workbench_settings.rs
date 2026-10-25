@@ -119,6 +119,13 @@ pub const CATALOG: &[Entry] = &[
         Kind::Choice(crate::i18n::SETTING_CHOICES),
     ),
     e(
+        "update.check",
+        crate::i18n::tr(
+            "Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (asks github.com once a day whether a newer release exists; only the request is sent, nothing about you) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it",
+        ),
+        Kind::Choice(&["ask", "daily", "manual"]),
+    ),
+    e(
         "http.confirmRequests",
         crate::i18n::tr(
             "Ask before .http requests and schema downloads leave this computer: never, remote (the first request to each new host per session) or always. Your own settings only; a folder cannot change it",
@@ -229,6 +236,7 @@ pub fn current(s: &Settings, key: &str) -> Value {
         "http.runOn" => json!(s.http_run_on),
         "http.confirmRequests" => json!(s.http_confirm),
         "ui.language" => json!(s.ui_language),
+        "update.check" => json!(s.update_check.as_str()),
         "spelling.enabled" => json!(s.spelling),
         "spelling.checkComments" => json!(s.spelling_comments),
         "json.validate.enable" => json!(s.schema_validate),

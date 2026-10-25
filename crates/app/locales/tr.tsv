@@ -4,6 +4,7 @@
 # Git terms (Git, commit, Stash, Pull, Push, Fetch, Rebase) stay as they are.
 # More terms: agent araç, adapter bağdaştırıcı, clipboard pano, scratch taslak, snippet kod parçacığı, passphrase anahtar parolası,
 # Host Sunucu, Port Bağlantı Noktası (the word port stays in compounds: SSH port yönlendirme), Debug Hata Ayıklama, Breakpoint Kesme Noktası.
+# Updates: update güncelleme, release/version sürüm, checksum sağlama toplamı, install kur (kurulum), restart yeniden başlat.
 
 # ---- Menu bar: menu names ----
 File	Dosya
@@ -1819,3 +1820,65 @@ Toggle inline view	Satır içi görünümü aç/kapat
 No changes	Değişiklik yok
 Reconnect	Yeniden Bağlan
 No settings folder on this machine.	Bu bilgisayarda ayar klasörü yok.
+
+# ======== Updates ========
+Help: Check for Updates…	Yardım: Güncellemeleri Denetle…
+Check for Updates…	Güncellemeleri Denetle…
+Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (asks github.com once a day whether a newer release exists; only the request is sent, nothing about you) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it	Yeni Codeyard sürümlerine bak: ask (henüz karar verilmedi; hiçbir şey denetlenmez), daily (github.com'a günde bir kez daha yeni bir sürüm olup olmadığını sorar; yalnızca isteğin kendisi gönderilir, sizinle ilgili hiçbir şey gönderilmez) ya da manual (yalnızca Güncellemeleri Denetle'yi seçtiğinizde). Yalnızca kendi ayarlarınızda geçerlidir; bir klasör bunu değiştiremez
+Check for updates automatically?	Güncellemeler otomatik denetlensin mi?
+Once a day, Codeyard can ask github.com for the checksum list of the latest release to see whether a newer version exists. That request is all that is sent: nothing about you or your files, no account and no tracking.	Codeyard, daha yeni bir sürüm olup olmadığını görmek için günde bir kez github.com'dan son sürümün sağlama toplamı listesini isteyebilir. Gönderilen tek şey bu istektir: sizinle ya da dosyalarınızla ilgili hiçbir şey gönderilmez, hesap ya da izleme yoktur.
+You can change this at any time in Settings (update.check). Check for Updates… always works, whatever you choose.	Bunu istediğiniz zaman Ayarlar'dan (update.check) değiştirebilirsiniz. Ne seçerseniz seçin, Güncellemeleri Denetle… her zaman çalışır.
+Check Daily	Her Gün Denetle
+Only When I Ask	Yalnızca Ben İstediğimde
+Checking for updates…	Güncellemeler denetleniyor…
+Codeyard is up to date	Codeyard güncel
+You have {}, the latest version.	Kurulu sürüm {} ve bu en son sürüm.
+You have {}	Kurulu sürüm: {}
+Codeyard {} is available	Codeyard {} kullanıma sunuldu
+Codeyard {} is available.	Codeyard {} kullanıma sunuldu.
+Codeyard {} is available. Click for details.	Codeyard {} kullanıma sunuldu. Ayrıntılar için tıklayın.
+Skip This Version	Bu Sürümü Atla
+Release Page	Sürüm Sayfası
+Download Page	İndirme Sayfası
+Later	Sonra
+Install and Restart	Kur ve Yeniden Başlat
+This copy isn't installed as an app, so download the new version yourself.	Bu kopya bir uygulama olarak kurulu değil; yeni sürümü kendiniz indirin.
+This release has no installer for this system. Download it from the release page.	Bu sürümde bu sistem için kurulum dosyası yok. Sürüm sayfasından indirin.
+Downloading Codeyard {}	Codeyard {} indiriliyor
+Downloading Codeyard {}. Click for details.	Codeyard {} indiriliyor. Ayrıntılar için tıklayın.
+Starting the download…	İndirme başlıyor…
+Cancelling…	İptal ediliyor…
+{0} of {1} MB	{0} / {1} MB
+Hide	Gizle
+Progress	İlerleme
+Installing Codeyard {}	Codeyard {} kuruluyor
+Installing Codeyard {}. Click for details.	Codeyard {} kuruluyor. Ayrıntılar için tıklayın.
+Verifying and installing…	Doğrulanıyor ve kuruluyor…
+Installing — Codeyard will restart.	Kuruluyor — Codeyard yeniden başlayacak.
+Update installed	Güncelleme kuruldu
+Update installed. Restart Codeyard to finish.	Güncelleme kuruldu. Bitirmek için Codeyard'ı yeniden başlatın.
+Restart Codeyard to finish.	Bitirmek için Codeyard'ı yeniden başlatın.
+Your open files and unsaved changes come back after the restart.	Açık dosyalarınız ve kaydedilmemiş değişiklikleriniz yeniden başlatmadan sonra geri gelir.
+Restart Now	Şimdi Yeniden Başlat
+Restart to update	Güncellemek için yeniden başlat
+Codeyard {} is installed. Click for details.	Codeyard {} kuruldu. Ayrıntılar için tıklayın.
+Updating…	Güncelleniyor…
+Updating… {}%	Güncelleniyor… %{}
+Installing…	Kuruluyor…
+Update failed	Güncelleme başarısız
+The update failed. Click for details.	Güncelleme başarısız oldu. Ayrıntılar için tıklayın.
+Couldn't check for updates	Güncellemeler denetlenemedi
+Couldn't download the update	Güncelleme indirilemedi
+The update couldn't be verified	Güncelleme doğrulanamadı
+The update couldn't be installed	Güncelleme kurulamadı
+Codeyard couldn't reach the update server. Check your internet connection and try again.	Codeyard güncelleme sunucusuna ulaşamadı. İnternet bağlantınızı denetleyip yeniden deneyin.
+Nothing was installed. What the update server sent didn't match the signed checksums, so Codeyard discarded it.	Hiçbir şey kurulmadı. Güncelleme sunucusundan gelenler imzalı sağlama toplamlarıyla eşleşmedi, bu yüzden Codeyard bunları attı.
+The new version couldn't be installed from here. You can download it from the release page instead.	Yeni sürüm buradan kurulamadı. Bunun yerine sürüm sayfasından indirebilirsiniz.
+Try Again	Yeniden Dene
+Codeyard could not start the new version: {}. The update is installed; open Codeyard again to use it.	Codeyard yeni sürümü başlatamadı: {}. Güncelleme kuruldu; kullanmak için Codeyard'ı yeniden açın.
+Restart without saving	Kaydetmeden yeniden başlat
+Restarting loses everything since the last save.	Yeniden başlatmak, son kayıttan beri yapılan her şeyi kaybettirir.
+Codeyard is still installing an update	Codeyard hâlâ bir güncelleme kuruyor
+Quitting now can leave the installation unfinished. It takes a few seconds.	Şimdi çıkmak kurulumu yarım bırakabilir. Birkaç saniye sürer.
+Quit Anyway	Yine de Çık
+Keep Waiting	Beklemeye Devam Et
