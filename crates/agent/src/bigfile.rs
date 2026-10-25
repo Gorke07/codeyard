@@ -164,15 +164,68 @@ pub fn read_lines(path: &Path, index: &Index, start: u64, count: u32) -> io::Res
 mod tests {
     use super::*;
 
+    /// Largest single allocation made by the current thread: the proof that skipping a giant line does not buffer it.
+    struct Biggest;
+    thread_local! { static BIGGEST: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+    // SAFETY: forwards every call unchanged to the system allocator; the bookkeeping touches only a const-initialised thread-local.
+    unsafe impl std::alloc::GlobalAlloc for Biggest {
+        unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+            let _ = BIGGEST.try_with(|b| b.set(b.get().max(layout.size())));
+            unsafe { std::alloc::System.alloc(layout) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+            unsafe { std::alloc::System.dealloc(ptr, layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: std::alloc::Layout, new_size: usize) -> *mut u8 {
+            let _ = BIGGEST.try_with(|b| b.set(b.get().max(new_size)));
+            unsafe { std::alloc::System.realloc(ptr, layout, new_size) }
+        }
+    }
+    #[global_allocator]
+    static ALLOC: Biggest = Biggest;
+
     #[test]
     fn skipping_a_line_does_not_allocate_it() {
         let mut data = vec![b'a'; 3_000_000];
         data.extend_from_slice(b"\nsecond\nlast");
         let mut r = std::io::BufReader::with_capacity(4096, std::io::Cursor::new(data));
+        BIGGEST.with(|b| b.set(0));
         assert!(skip_line(&mut r).unwrap());
+        let biggest = BIGGEST.with(|b| b.get());
+        assert!(biggest < 64 * 1024, "skipping a 3 MB line allocated {biggest} bytes in one piece");
         assert!(skip_line(&mut r).unwrap());
         assert!(skip_line(&mut r).unwrap(), "a final line without newline still counts");
         assert!(!skip_line(&mut r).unwrap(), "end of file");
+    }
+
+    /// A line over the limit is cut (with " …") and the rest of it is skipped: the next line must start where the file's next line starts,
+    /// also when the byte limit falls inside a multi-byte character.
+    #[test]
+    fn long_lines_are_cut_and_the_next_line_stays_intact() {
+        let dir = std::env::temp_dir().join(format!("codeyard-big-long-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("long.txt");
+        let mut text = String::new();
+        text.push_str(&"b".repeat(MAX_LINE));
+        text.push('\n');
+        text.push_str(&"a".repeat(MAX_LINE + 500));
+        text.push('\n');
+        text.push_str(&"x".repeat(MAX_LINE * 4 * 3));
+        text.push('\n');
+        text.push_str(&"€".repeat(MAX_LINE * 3));
+        text.push_str("\r\nsecond\nlast");
+        std::fs::write(&p, &text).unwrap();
+        let idx = build(&p).unwrap();
+        let got = read_lines(&p, &idx, 0, 10).unwrap();
+        let cut = |c: &str| format!("{} …", c.repeat(MAX_LINE));
+        assert_eq!(got.len(), 6, "{:?}", got.iter().map(|l| l.chars().count()).collect::<Vec<_>>());
+        // Not assert_eq!: a failure would print the 10 000-character lines.
+        for (i, want) in [("b".repeat(MAX_LINE)), cut("a"), cut("x"), cut("€")].iter().enumerate() {
+            assert!(got[i] == *want, "line {i}: {} chars, expected {} (the cut text or the whole line)", got[i].chars().count(), want.chars().count());
+        }
+        assert_eq!(&got[4..], ["second", "last"]);
+        assert_eq!(read_lines(&p, &idx, 4, 1).unwrap(), vec!["second"], "skipping to a line behind a giant one");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

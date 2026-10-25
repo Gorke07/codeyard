@@ -214,7 +214,9 @@ fn lossy_offset(line: &[u8], off: usize, end: bool) -> usize {
     let (mut raw, mut lossy) = (0, 0);
     for chunk in line.utf8_chunks() {
         let valid = chunk.valid().len();
-        if off < raw + valid {
+        // `<=`: an offset right at the end of the valid text is where a replacement character would start, so a range that ends
+        // there (`ab` before an invalid byte) must not be stretched over the replacement.
+        if off <= raw + valid {
             return lossy + (off - raw);
         }
         raw += valid;
@@ -335,6 +337,35 @@ mod tests {
         let (a, b) = m.ranges[0];
         assert_eq!(&m.preview[a as usize..b as usize], "İĞNE");
         assert_eq!(m.column, 500);
+    }
+
+    #[test]
+    fn lossy_offsets_follow_the_replacement_characters() {
+        // "ab", one invalid byte, "cd", a truncated 3-byte sequence (2 bytes, one replacement), "ef".
+        let line = b"ab\xffcd\xe2\x82ef";
+        assert_eq!(String::from_utf8_lossy(line), "ab\u{FFFD}cd\u{FFFD}ef");
+        // (raw offset, start, end) in the lossy text; a replacement is 3 bytes.
+        for (off, start, end) in [(0, 0, 0), (2, 2, 2), (3, 5, 5), (4, 6, 6), (5, 7, 7), (6, 7, 10), (7, 10, 10), (9, 12, 12)] {
+            assert_eq!(lossy_offset(line, off, false), start, "start offset {off}");
+            assert_eq!(lossy_offset(line, off, true), end, "end offset {off}");
+        }
+    }
+
+    #[test]
+    fn a_match_next_to_invalid_bytes_keeps_its_own_range() {
+        let line = b"ab\xffcd";
+        let re = compile(&q("ab")).unwrap();
+        let m = &search_bytes(&re, line, 10)[0];
+        let (a, b) = m.ranges[0];
+        assert_eq!(&m.preview[a as usize..b as usize], "ab", "the range ends before the replacement character");
+        let m = &search_bytes(&compile(&q("cd")).unwrap(), line, 10)[0];
+        let (a, b) = m.ranges[0];
+        assert_eq!(&m.preview[a as usize..b as usize], "cd");
+        // A match that ends in the middle of an invalid run (here the first byte of a truncated 3-byte sequence) covers its whole replacement.
+        let regex = SearchQuery { regex: true, ..q(r"(?-u:\xe2)") };
+        let m = &search_bytes(&compile(&regex).unwrap(), b"x\xe2\x82y", 10)[0];
+        let (a, b) = m.ranges[0];
+        assert_eq!(&m.preview[a as usize..b as usize], "\u{FFFD}");
     }
 
     #[test]

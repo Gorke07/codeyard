@@ -448,6 +448,69 @@ mod tests {
         assert_eq!(ids.len(), themes.len());
     }
 
+    /// `contrast_failures` skips a pair whose role it cannot read; build.rs already rejects unknown roles, this keeps the skip from ever being silent.
+    #[test]
+    fn every_contrast_pair_names_real_roles() {
+        assert!(PAIRS.len() > 100, "{} pairs", PAIRS.len());
+        for (fg, bg, min) in PAIRS {
+            assert!(DARK.get(fg).is_some() && DARK.get(bg).is_some(), "pair {fg} / {bg} names an unknown role");
+            assert!(*min >= 3.0, "pair {fg} / {bg}: minimum {min} is below WCAG AA for UI");
+        }
+    }
+
+    /// build.rs embeds whatever `*.json` it finds and embeds nothing if the folder is unreadable; the contrast tests would then check fewer themes
+    /// (or none) and still pass. So compare the embedded list with the folder, and refuse files that would be skipped (`.jsonc`, `.JSON`).
+    #[test]
+    fn every_theme_file_in_the_folder_is_embedded_and_checked() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
+        let mut on_disk = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("themes folder") {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if name == "README.md" {
+                continue;
+            }
+            assert!(path.extension().is_some_and(|x| x == "json"), "themes/{name}: only lowercase `.json` files are embedded; this one would be skipped");
+            on_disk.push(path.file_stem().unwrap().to_string_lossy().into_owned());
+        }
+        on_disk.sort();
+        let mut embedded: Vec<String> = BUILTIN_JSON.iter().map(|(id, _)| id.to_string()).collect();
+        embedded.sort();
+        assert!(on_disk.len() >= 16, "only {} theme files found", on_disk.len());
+        assert_eq!(embedded, on_disk, "themes/*.json and the embedded list differ (stale build? build.rs failed to read the folder?)");
+        assert_eq!(builtin().len(), on_disk.len() + 2, "every file plus Midnight and Daylight");
+    }
+
+    /// A native theme file that leaves a role out silently inherits the default theme's colour for it, which no contrast test would notice.
+    #[test]
+    fn every_theme_file_defines_every_role() {
+        for (id, json) in BUILTIN_JSON {
+            let value: Value = serde_json::from_str(json).unwrap();
+            let colors = value.get("color").and_then(Value::as_object).unwrap_or_else(|| panic!("{id}: built-in themes use the native format (\"color\")"));
+            let missing: Vec<&&str> = crate::ROLES.iter().filter(|r| !colors.contains_key(**r)).collect();
+            assert!(missing.is_empty(), "{id}: roles missing from the file (they would silently take the default theme's colour): {missing:?}");
+        }
+    }
+
+    /// `builtin()` runs every theme through `guard_contrast`, so `every_builtin_theme_passes_wcag_aa` cannot tell a broken colour in a file from a
+    /// repaired one. These themes are authored to pass as written: breaking one of their colours fails here. The others in `REPAIRED_AT_LOAD` were
+    /// adapted from upstream palettes and rely on the guard. A new theme file must be listed in one of the two, so the choice is made on purpose.
+    #[test]
+    fn authored_themes_pass_wcag_aa_before_the_guard_touches_them() {
+        const PASS_AS_WRITTEN: &[&str] = &["codeyard-dark", "codeyard-light", "high-contrast-dark", "high-contrast-light", "quarry"];
+        const REPAIRED_AT_LOAD: &[&str] =
+            &["dracula", "ember", "fjord", "github-light", "graphite", "nord", "one-dark", "paper", "solarized-dark", "solarized-light", "studio-dark"];
+        for (id, _) in BUILTIN_JSON {
+            assert!(PASS_AS_WRITTEN.contains(id) || REPAIRED_AT_LOAD.contains(id), "{id}: add it to PASS_AS_WRITTEN (preferred) or REPAIRED_AT_LOAD");
+        }
+        for id in PASS_AS_WRITTEN {
+            assert!(BUILTIN_JSON.iter().any(|(i, _)| i == id), "{id} is listed but no such theme file exists");
+            let t = Theme { id: id.to_string(), name: id.to_string(), dark: true, palette: raw(id), source: Source::Builtin };
+            let failing: Vec<String> = t.contrast_failures().iter().map(|(fg, bg, r, min)| format!("{fg} on {bg} = {r:.2} (needs {min})")).collect();
+            assert!(failing.is_empty(), "{id}.json fails WCAG AA as written (the load-time guard would hide this):\n{}", failing.join("\n"));
+        }
+    }
+
     #[test]
     fn imports_vscode_theme_with_jsonc_alpha_and_scopes() {
         let src = r##"{

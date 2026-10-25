@@ -400,21 +400,51 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
     }
 
+    /// Records the largest single allocation made by the current thread, so a test can see a buffer sized from an untrusted length prefix.
+    struct Biggest;
+    thread_local! { static BIGGEST: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+    // SAFETY: forwards every call unchanged to the system allocator; the bookkeeping touches only a const-initialised thread-local.
+    unsafe impl std::alloc::GlobalAlloc for Biggest {
+        unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+            let _ = BIGGEST.try_with(|b| b.set(b.get().max(layout.size())));
+            unsafe { std::alloc::System.alloc(layout) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: std::alloc::Layout) {
+            unsafe { std::alloc::System.dealloc(ptr, layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: std::alloc::Layout, new_size: usize) -> *mut u8 {
+            let _ = BIGGEST.try_with(|b| b.set(b.get().max(new_size)));
+            unsafe { std::alloc::System.realloc(ptr, layout, new_size) }
+        }
+    }
+    #[global_allocator]
+    static ALLOC: Biggest = Biggest;
+
+    /// Prefix says `MAX_FRAME`, then 10 body bytes arrive and the peer stalls. The call must fail on the stalled read without ever having
+    /// allocated a buffer the size of the prefix (a `vec![0; len]` or `with_capacity(len)` would pin 64 MiB per connection).
     #[test]
     fn announced_length_is_not_preallocated() {
-        struct Stalled(usize);
+        struct Stalled {
+            data: Vec<u8>,
+            at: usize,
+        }
         impl Read for Stalled {
             fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-                if self.0 < 4 {
-                    buf[..1].copy_from_slice(&(MAX_FRAME as u32).to_le_bytes()[self.0..=self.0]);
-                    self.0 += 1;
+                if self.at < self.data.len() {
+                    buf[0] = self.data[self.at];
+                    self.at += 1;
                     return Ok(1);
                 }
                 Err(io::ErrorKind::TimedOut.into())
             }
         }
-        // Would be a 64 MiB zeroed allocation before the first body byte arrives; here it fails fast on the stalled read.
-        assert_eq!(read_frame::<Request>(&mut Stalled(0)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        let mut data = (MAX_FRAME as u32).to_le_bytes().to_vec();
+        data.extend_from_slice(&[7; 10]);
+        BIGGEST.with(|b| b.set(0));
+        let err = read_frame::<Request>(&mut Stalled { data, at: 0 }).unwrap_err();
+        let biggest = BIGGEST.with(|b| b.get());
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert!(biggest < 1024 * 1024, "read_frame allocated {biggest} bytes for a frame that never arrived (MAX_FRAME is {MAX_FRAME})");
     }
 
     #[test]
@@ -427,6 +457,11 @@ mod tests {
     #[test]
     fn rejects_oversized_frame_header() {
         let mut r: &[u8] = &(u32::MAX).to_le_bytes();
-        assert!(read_frame::<Request>(&mut r).is_err());
+        // Without the cap this also fails (the body is missing), but as `UnexpectedEof` after trying to read 4 GiB: check it is the cap.
+        BIGGEST.with(|b| b.set(0));
+        let err = read_frame::<Request>(&mut r).unwrap_err();
+        assert!(err.to_string().contains("too large"), "{err}");
+        assert_ne!(err.kind(), io::ErrorKind::UnexpectedEof);
+        assert!(BIGGEST.with(|b| b.get()) < 1024 * 1024, "the header alone must not cause a big allocation");
     }
 }

@@ -334,46 +334,68 @@ mod tests {
         spans.into_iter().map(|(r, role)| (src[r].to_string(), role)).collect()
     }
 
+    /// Every arm of `language_for_path`, not a hand-kept list: the arms are read from this file's own source, so a language added later is
+    /// compiled by this test without anyone remembering to add it. A query that fails to compile makes the language silently plain text.
     #[test]
     fn every_language_query_compiles() {
-        for p in [
-            "a.rs",
-            "a.js",
-            "a.jsx",
-            "a.ts",
-            "a.tsx",
-            "a.py",
-            "a.go",
-            "a.json",
-            "a.sh",
-            "a.css",
-            "a.html",
-            "a.toml",
-            "a.yaml",
-            "a.md",
-            "a.c",
-            "a.h",
-            "a.cpp",
-            "a.hpp",
-            "a.java",
-            "a.cs",
-            "a.rb",
-            "Rakefile",
-            "a.php",
-            "a.swift",
-            "a.kt",
-            "a.sql",
-            "a.lua",
-            "a.dockerfile",
-            "Dockerfile.dev",
-            "Containerfile",
-            "a.mk",
-            "Makefile",
-        ] {
-            let l = language_for_path(p).unwrap();
-            assert!(l.query().is_some(), "{} ({p}) sorgusu derlenmedi", l.name);
+        let src = include_str!("lib.rs");
+        let body = src.split("pub fn language_for_path").nth(1).and_then(|t| t.split("/// Feeds the rope").next()).expect("language_for_path");
+        let (by_ext, by_name) = body.split_once("_ => match name {").expect("the file-name arms");
+        // Left of `=>`, the quoted tokens of each arm: extensions in the first half, whole file names in the second.
+        let tokens = |text: &str| -> Vec<String> {
+            let mut out = Vec::new();
+            for line in text.lines().filter(|l| l.contains("=>")) {
+                let left = line.split("=>").next().unwrap_or("");
+                out.extend(left.split('"').skip(1).step_by(2).map(str::to_string));
+            }
+            out
+        };
+        let mut paths: Vec<String> = tokens(by_ext).into_iter().map(|e| format!("a.{e}")).collect();
+        // `starts_with("Dockerfile.")` is a prefix, not a name.
+        paths.extend(tokens(by_name).into_iter().map(|n| if n.ends_with('.') { format!("{n}dev") } else { n }));
+        assert!(paths.len() > 55, "only {} paths were derived from language_for_path; did its shape change?", paths.len());
+        let mut names = std::collections::BTreeSet::new();
+        for p in &paths {
+            let l = language_for_path(p).unwrap_or_else(|| panic!("{p} is listed in language_for_path but resolves to no language"));
+            assert!(l.query().is_some(), "the {} query ({p}) does not compile", l.name);
+            names.insert(l.name);
+        }
+        // The derivation above must really reach the languages that ship their own query file.
+        for must in ["Kotlin", "Dockerfile", "Markdown", "TypeScript JSX", "C++"] {
+            assert!(names.contains(must), "{must} was not reached ({names:?})");
         }
         assert!(language_for_path("README").is_none());
+    }
+
+    /// A query that compiles but captures nothing the theme knows would still pass the test above and leave the file uncoloured.
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn older_languages_color_comment_string_number() {
+        let cases: &[(&str, &str, &[(&str, Role)])] = &[
+            (
+                "a.go",
+                "package main\n// c\nfunc f() string { return \"x\" }\nvar n = 42\n",
+                &[("// c", Role::Comment), ("func", Role::Keyword), ("\"x\"", Role::String), ("42", Role::Number)],
+            ),
+            ("a.json", "{\"a\": 1, \"b\": true}\n", &[("\"a\"", Role::String), ("1", Role::Number)]),
+            ("a.sh", "# c\nif true; then echo \"x\"; fi\n", &[("# c", Role::Comment), ("if", Role::Keyword), ("\"x\"", Role::String)]),
+            ("a.css", "/* c */\na { color: red; margin: 4px; }\n", &[("/* c */", Role::Comment), ("a", Role::Tag), ("4px", Role::Number)]),
+            ("a.html", "<!-- c -->\n<p class=\"a\">x</p>\n", &[("<!-- c -->", Role::Comment), ("p", Role::Tag), ("a", Role::String)]),
+            ("a.toml", "# c\na = \"x\"\nn = 1\n", &[("# c", Role::Comment), ("\"x\"", Role::String), ("1", Role::Number)]),
+            ("a.yaml", "# c\na: \"x\"\nn: 1\n", &[("# c", Role::Comment), ("\"x\"", Role::String), ("1", Role::Number)]),
+            ("a.py", "# c\ndef f():\n    return \"x\" + 1\n", &[("# c", Role::Comment), ("def", Role::Keyword), ("\"x\"", Role::String), ("1", Role::Number)]),
+            (
+                "a.js",
+                "// c\nfunction f() { return \"x\" + 1 }\n",
+                &[("// c", Role::Comment), ("function", Role::Keyword), ("\"x\"", Role::String), ("1", Role::Number)],
+            ),
+        ];
+        for (path, src, want) in cases {
+            let r = roles_of(path, src);
+            for w in *want {
+                assert!(r.iter().any(|(t, role)| t == w.0 && *role == w.1), "{path}: expected {w:?}\n{r:?}");
+            }
+        }
     }
 
     /// A small snippet per new language: a comment, a string and a keyword must all get colored.
@@ -409,7 +431,7 @@ mod tests {
         for (path, src, want) in cases {
             let r = roles_of(path, src);
             for w in *want {
-                assert!(r.iter().any(|(t, role)| t == w.0 && *role == w.1), "{path}: {:?} bekleniyordu\n{r:?}", w);
+                assert!(r.iter().any(|(t, role)| t == w.0 && *role == w.1), "{path}: expected {w:?}\n{r:?}");
             }
         }
     }

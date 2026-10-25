@@ -618,9 +618,12 @@ mod tests {
     /// Manual verification: `CODEYARD_TR_DICT_DIR=<folder with index.aff/index.dic> cargo test -p spell -- --ignored turkish`
     /// (the 9 MB dictionary isn't in the repo; users download it with "Spelling: Install Dictionary").
     #[test]
-    #[ignore]
+    #[ignore = "needs the 9 MB Turkish dictionary, which is not in the repo; set CODEYARD_TR_DICT_DIR"]
     fn turkish_dictionary_smoke() {
-        let Some(dir) = std::env::var_os("CODEYARD_TR_DICT_DIR") else { return };
+        let Some(dir) = std::env::var_os("CODEYARD_TR_DICT_DIR") else {
+            // Under `--ignored` a silent return would read as a pass.
+            panic!("turkish_dictionary_smoke: CODEYARD_TR_DICT_DIR is not set; it was asked for with --ignored, so this must not pass vacuously");
+        };
         let start = std::time::Instant::now();
         let d = load_dir(Path::new(&dir)).expect("tr dictionary parses");
         eprintln!("loaded in {:?}", start.elapsed());
