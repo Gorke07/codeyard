@@ -247,3 +247,12 @@ jobs:
           ls -l dist
           echo "--- release notes ---"
           cat dist/RELEASE_NOTES.md
+      # The signed files of a dry run, to test the updater against the real signature before a tag exists.
+      - name: Keep the signed dry-run files
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
