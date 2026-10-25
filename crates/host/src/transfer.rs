@@ -134,19 +134,21 @@ pub fn upload(shell: Shell, local: &Path, remote_dir: &str, cancel: &AtomicBool,
     if is_dir {
         // A folder we create is removed on cancel/error; one we merge into stays as is.
         let existed = remote_exists(shell, &dest);
-        // tar | (remote) tar -x keeps the tree, permissions and empty folders. `-H`: follow a top-level symlink;
-        // `-o`: don't apply ownership (a root server shouldn't get the uploader's uid).
+        // tar | (remote) tar -x keeps the tree, permissions and empty folders. Only flags common to bsdtar, GNU tar and
+        // busybox are used: `-H` means "follow top-level symlinks" on bsdtar but takes a format argument on GNU tar,
+        // so the top-level link is resolved here instead and the folder's contents (`.`) are archived. The remote
+        // `-o` (extract) means "don't apply ownership" everywhere (a root server shouldn't get the uploader's uid);
+        // it is only ever used with `-x` because with `-c` GNU tar reads it as `--old-archive`.
+        let tree = std::fs::canonicalize(local).map_err(|e| fail(format!("{}: {e}", local.display())))?;
         let script = format!(
-            "set -e; if [ -e {dest} ] && [ ! -d {dest} ]; then echo {msg} >&2; exit 1; fi; mkdir -p {d}; tar -C {d} -xof -",
+            "set -e; if [ -e {dest} ] && [ ! -d {dest} ]; then echo {msg} >&2; exit 1; fi; mkdir -p {dest}; tar -C {dest} -xof -",
             dest = sh_quote(&dest),
             msg = sh_quote(&format!("a file named “{name}” is in the way on the server")),
-            d = sh_quote(if dir.is_empty() { "/" } else { dir })
         );
         let mut tar = spawn(
             {
                 let mut c = Command::new("tar");
-                // `./` so a folder name starting with `-` isn't taken as a `tar` option.
-                c.arg("-C").arg(local.parent().unwrap_or(Path::new("."))).arg("-cHf").arg("-").arg(format!("./{name}"));
+                c.arg("-C").arg(&tree).arg("-cf").arg("-").arg(".");
                 c
             },
             Stdio::null(),
@@ -579,6 +581,26 @@ mod tests {
         let err = download(&script("echo 'cat: /x: Permission denied' >&2; exit 1"), "/x", false, &d.join("o"), &cancel, |_| {}).unwrap_err().to_string();
         assert!(err.contains("Permission denied"), "{err}");
         assert_eq!(std::fs::read_dir(d.join("o")).unwrap().count(), 0, "no partial file after a failed download");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_folder_named_like_an_option_keeps_its_modes_both_ways() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = dir("dash");
+        let cancel = AtomicBool::new(false);
+        let tree = d.join("-xvf");
+        std::fs::create_dir_all(tree.join("sub")).unwrap();
+        std::fs::write(tree.join("sub/run.sh"), "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(tree.join("sub/run.sh"), std::fs::Permissions::from_mode(0o750)).unwrap();
+        std::fs::set_permissions(tree.join("sub"), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mode = |p: PathBuf| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let dest = upload(&local_shell, &tree, d.join("srv").to_str().unwrap(), &cancel, |_| {}).unwrap();
+        assert_eq!((mode(Path::new(&dest).join("sub/run.sh")), mode(Path::new(&dest).join("sub"))), (0o750, 0o700));
+        let back = download(&local_shell, &dest, true, &d.join("back"), &cancel, |_| {}).unwrap();
+        assert_eq!(back.file_name().unwrap(), "-xvf");
+        assert_eq!(mode(back.join("sub/run.sh")), 0o750);
         let _ = std::fs::remove_dir_all(&d);
     }
 

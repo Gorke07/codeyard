@@ -72,7 +72,7 @@ listening ports are found by `Exec`-ing a read of `/proc/net/tcp` or `lsof`.
 - A killed pty child is reaped (no zombie shells); a failed handshake kills and waits for its ssh process, and the handshake
   has a 30 s deadline so a silent agent cannot stall reconnecting; a window closed during a reconnect never keeps the new
   connection.
-- tar operands are passed as `./name`, so a folder called `-x…` is never read as an option.
+- tar operands are `./name` (download) or `.` inside a resolved `-C` directory (upload), so a folder called `-x…` is never read as an option.
 
 ## Surviving a dropped connection
 
@@ -101,7 +101,7 @@ through the askpass bridge.
 ## File transfer (`host::transfer`)
 
 Uploads and downloads are streamed over the shell: single files via `cat` into `<name>.codeyard-part.$$` and `mv`
-when complete, folders via `tar -cHf -` | `tar -xof -`. Properties the tests lock in:
+when complete, folders via `tar -cf -` | `tar -xof -` (only flags that bsdtar, GNU tar and busybox share; a top-level symlink is resolved by the client). Properties the tests lock in:
 
 - a file and a folder of the same name never replace each other (detected before anything is copied);
 - cancelling or failing removes only what this transfer created: a new folder is cleaned up, a folder that already
