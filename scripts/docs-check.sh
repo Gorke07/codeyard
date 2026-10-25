@@ -44,14 +44,17 @@ if not (dm and d): fail("could not find the agent daemon budget in memcheck.sh o
 elif dm.group(1) != d.group(1): fail(f"agent daemon budget: docs {d.group(1)} MB, memcheck.sh {dm.group(1)} MB")
 ci = read(".github/workflows/ci.yml")
 m = re.search(r"-le (\d+)", ci); d = re.search(r"agent binary \(Linux musl\)\s*\|\s*(\d+) KB", arch)
-if m and d and m.group(1) != d.group(1): fail(f"agent size limit: CI {m.group(1)} KB, docs {d.group(1)} KB")
+if not (m and d): fail("could not find the agent size limit (`-le N`) in .github/workflows/ci.yml or docs/architecture.md")
+elif m.group(1) != d.group(1): fail(f"agent size limit: CI {m.group(1)} KB, docs {d.group(1)} KB")
 
 # 2. Protocol version
-v = re.search(r"pub const VERSION: u32 = (\d+);", read("crates/proto/src/lib.rs")).group(1)
+vm = re.search(r"pub const VERSION: u32 = (\d+);", read("crates/proto/src/lib.rs"))
 m = re.search(r"Current protocol version: \*\*(\d+)\*\*", read("docs/remote.md"))
-if not m or m.group(1) != v: fail(f"docs/remote.md protocol version {m.group(1) if m else '?'} != proto::VERSION {v}")
+if not vm: fail("crates/proto/src/lib.rs: `pub const VERSION: u32 = N;` not found")
+elif not m or m.group(1) != vm.group(1): fail(f"docs/remote.md protocol version {m.group(1) if m else '?'} != proto::VERSION {vm.group(1)}")
 dm = re.search(r"GRACE: Duration = Duration::from_secs\((\d+)\)", read("crates/agent/src/daemon.rs"))
-if dm and f"`GRACE` ({int(dm.group(1))//60} minutes)" not in read("docs/remote.md"): fail("docs/remote.md: daemon GRACE does not match crates/agent/src/daemon.rs")
+if not dm: fail("crates/agent/src/daemon.rs: `GRACE: Duration = Duration::from_secs(N)` not found")
+elif f"`GRACE` ({int(dm.group(1))//60} minutes)" not in read("docs/remote.md"): fail("docs/remote.md: daemon GRACE does not match crates/agent/src/daemon.rs")
 
 # 3. arch-check limits
 ac = read("scripts/arch-check.sh")
@@ -60,9 +63,11 @@ text = " ".join(arch.split())
 for f, x in lim.items():
     if f"`{f}` ≤ {x}" not in text: fail(f"docs/architecture.md: size limit of {f} is not {x} (arch-check.sh)")
 other = re.search(r"\*\) check \"\$f\" (\d+)", ac); tests = re.search(r"qa_\*_tests\.rs\) check \"\$f\" (\d+)", ac)
-if other and f"≤ {other.group(1)} (test files ≤ {tests.group(1)})" not in text: fail("docs/architecture.md: generic file size limits differ from arch-check.sh")
+if not (other and tests): fail("scripts/arch-check.sh: generic file size limits (`check \"$f\" N`) not found")
+elif f"≤ {other.group(1)} (test files ≤ {tests.group(1)})" not in text: fail("docs/architecture.md: generic file size limits differ from arch-check.sh")
 st = re.search(r'"\$n" -gt (\d+) \]; then echo "FAIL Workbench', ac)
-if st and f"`Workbench` struct ≤ {st.group(1)} lines" not in text.replace("under", "≤"): pass
+if not st: fail("scripts/arch-check.sh: Workbench struct limit not found")
+elif f"`Workbench` struct ≤ {st.group(1)} lines" not in text: fail(f"docs/architecture.md: Workbench struct limit is not {st.group(1)} lines (arch-check.sh)")
 
 # 4. Environment variables
 used = set()
@@ -77,17 +82,22 @@ for name in sorted(set(re.findall(r"CODEYARD_[A-Z0-9_]+", env_doc)) - used):
     fail(f"{name} is documented in docs/environment.md but no code reads it")
 
 # 5. Relative links and the document index
-md = ["README.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md"] + sorted(glob.glob("docs/*.md"))
+def prose(p): return re.sub(r"^(```|~~~).*?^\1.*?$", "", read(p), flags=re.S | re.M)  # without fenced code blocks
+md = (["README.md", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", "vendor/gpui/PATCHES.md"]
+      + sorted(glob.glob("docs/*.md")) + sorted(glob.glob(".github/*.md")))
 for p in md:
     base = os.path.dirname(p)
-    for m in re.finditer(r"\]\(([^)#\s]+)(#[^)]*)?\)", read(p)):
-        t = m.group(1)
-        if "://" in t or t.startswith("mailto:"): continue
-        target = os.path.normpath(os.path.join(base, t))
+    body = prose(p)
+    # inline links `[x](target#frag)`, `[x](#frag)` (same file) and reference definitions `[x]: target`
+    links = [(m.group(1), m.group(2)) for m in re.finditer(r"\]\(([^)#\s]*)(#[^)]*)?\)", body)]
+    links += [(m.group(1), m.group(2)) for m in re.finditer(r"^\[[^\]]+\]:\s*([^#\s]+)(#\S*)?\s*$", body, re.M)]
+    for t, frag in links:
+        if "://" in t or t.startswith("mailto:") or (not t and not frag): continue
+        target = os.path.normpath(os.path.join(base, t)) if t else p
         if not os.path.exists(target): fail(f"{p}: broken link {t}"); continue
-        if m.group(2) and target.endswith(".md"):
-            heads = {re.sub(r"[^\w\- ]", "", h.strip().lower()).replace(" ", "-") for h in re.findall(r"^#+ (.+)$", read(target), re.M)}
-            if m.group(2)[1:] not in heads: fail(f"{p}: link {t}{m.group(2)} points to a heading that does not exist")
+        if frag and target.endswith(".md"):
+            heads = {re.sub(r"[^\w\- ]", "", h.strip().lower()).replace(" ", "-") for h in re.findall(r"^#+ (.+)$", prose(target), re.M)}
+            if frag[1:] not in heads: fail(f"{p}: link {t}{frag} points to a heading that does not exist")
 index = read("docs/README.md")
 for p in sorted(glob.glob("docs/*.md")):
     n = os.path.basename(p)
@@ -109,8 +119,9 @@ if "## [Unreleased]" not in cl: fail("CHANGELOG.md has no Unreleased section")
 heads = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", cl, re.M)
 for h in heads:
     if not re.search(rf"^\[{re.escape(h)}\]: ", cl, re.M): fail(f"CHANGELOG.md: no link reference for {h}")
-tags = subprocess.run(["git", "tag"], capture_output=True, text=True).stdout.split()
-for t in tags:
+gt = subprocess.run(["git", "tag"], capture_output=True, text=True)
+if gt.returncode != 0: print("docs-check: note: `git tag` failed, tag/CHANGELOG check skipped:", gt.stderr.strip(), file=sys.stderr)
+for t in gt.stdout.split():
     if t.startswith("v") and t[1:] not in heads: fail(f"git tag {t} has no CHANGELOG section")
 
 # 6b. Licence files must match the declaration in Cargo.toml
@@ -122,11 +133,17 @@ if "MIT OR Apache-2.0" not in lic: fail(f"Cargo.toml licence is '{lic}'; README,
 # 7. Command-line flags: README == main.rs --help
 main = read("crates/app/src/main.rs")
 usage = re.search(r'println!\(\s*"usage: ([^"]+)"', main)
-if usage:
-    flags = set(re.findall(r"--[a-z]+", usage.group(1)))
+if not usage: fail('crates/app/src/main.rs: the `println!("usage: ...")` help text was not found')
+else:
+    flags = set(re.findall(r"--[a-z][a-z-]*", usage.group(1)))
     quick = read("README.md")
-    for f in flags:
+    for f in sorted(flags):
         if f not in quick: fail(f"README.md does not mention the {f} flag (main.rs --help)")
+    # every flag the parser accepts is in --help, except the hidden test flag and the standard ones
+    parsed = set(re.findall(r'^\s*(?:"-[A-Za-z]" \| )?"(--[a-z][a-z-]*)"(?: \| "-?-?[A-Za-z-]+")* =>', main, re.M))
+    if not parsed: fail("crates/app/src/main.rs: no `\"--flag\" =>` arms found (flag check is stale)")
+    for f in sorted(parsed - flags - {"--do", "--help", "--version"}):
+        fail(f"crates/app/src/main.rs parses {f} but --help does not list it")
 
 if errors:
     print("docs-check: FAIL")

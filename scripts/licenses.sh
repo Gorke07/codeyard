@@ -25,16 +25,27 @@ FILES=(
 missing=0
 for entry in "${FILES[@]}"; do
   src=${entry%% *}
-  if [ ! -e "$src" ]; then echo "licenses: missing $src" >&2; missing=1; fi
+  if [ ! -e "$src" ]; then echo "licenses: missing $src" >&2; missing=1
+  elif [ -f "$src" ] && [ ! -s "$src" ]; then echo "licenses: $src is empty" >&2; missing=1; fi
 done
 [ -d crates/syntax/LICENSES ] && [ -z "$(ls -A crates/syntax/LICENSES)" ] && { echo "licenses: crates/syntax/LICENSES is empty" >&2; missing=1; }
-# The Windows script and the installer keep their own copy of the list; each source must appear in both.
+# The Windows script and the installer keep their own copy of the list. Each entry must appear in both with the same
+# source path and target name (whole entries, not substrings: `LICENSE-MIT` is also a substring of `vendor\xattr\LICENSE-MIT`).
 for entry in "${FILES[@]}"; do
-  src=${entry%% *}; win=${src//\//\\}
-  [ "${src%%/*}" = "$src" ] && win=$src
-  for f in scripts/bundle-windows.ps1 installer/windows/codeyard.iss; do
-    grep -qF -- "$win" "$f" || { echo "licenses: $f does not list $src" >&2; missing=1; }
-  done
+  src=${entry%% *} name=${entry#* }; win=${src//\//\\}
+  if ! grep -qF -- "'$win' = '$name'" scripts/bundle-windows.ps1; then
+    echo "licenses: scripts/bundle-windows.ps1 does not map $src -> $name" >&2; missing=1
+  fi
+  if [ -d "$src" ]; then tok="Source: \"..\\..\\$win\\*\";"; want="DestDir: \"{app}\\licenses\\$name\""
+  else tok="Source: \"..\\..\\$win\";"; want="DestDir: \"{app}\\licenses\""
+    [ "$name" = "${src##*/}" ] || want="DestName: \"$name\""; fi
+  line=$(grep -F -- "$tok" installer/windows/codeyard.iss | head -1 || true)
+  case "$line" in
+    "") echo "licenses: installer/windows/codeyard.iss does not list $src" >&2; missing=1 ;;
+    *"$want"*) if [ ! -d "$src" ] && [ "$name" = "${src##*/}" ] && [[ "$line" == *DestName* ]]; then
+         echo "licenses: installer/windows/codeyard.iss renames $src, but the list keeps its name ($name)" >&2; missing=1; fi ;;
+    *) echo "licenses: installer/windows/codeyard.iss: $src is not installed as $name (expected $want)" >&2; missing=1 ;;
+  esac
 done
 [ "$missing" = 0 ] || exit 1
 

@@ -30,7 +30,10 @@ fp_mb() {
 fail=0
 check() { # name budget measured unit
   local status=ok unit=${4:-MB}
-  if [ "$3" -gt "$2" ]; then status=FAIL; fail=1; fi
+  # An empty or non-numeric measurement (process died, `footprint` failed) must not pass: `[ "" -gt N ]` is an error, not "false".
+  case "$3" in ''|*[!0-9]*) status=FAIL; fail=1; echo "memcheck: no measurement for '$1' (process exited early or footprint failed)" >&2 ;;
+    *) if [ "$3" -gt "$2" ]; then status=FAIL; fail=1; fi ;;
+  esac
   printf "  %-4s %-40s %6s %s  (budget %s)\n" "$status" "$1" "$3" "$unit" "$2"
 }
 
@@ -56,7 +59,7 @@ measure() { # name budget args...
   "$APP" "$@" >/dev/null 2>&1 &
   local pid=$!
   check "$name" "$budget" "$(settled_mb $pid)"
-  kill $pid; wait $pid 2>/dev/null || true
+  kill $pid 2>/dev/null || true; wait $pid 2>/dev/null || true
 }
 
 # The budgets are a guide: a little growth per feature is normal (2026-10-21: ~10 MB of
@@ -87,9 +90,9 @@ CODEYARD_DEV=1 "$APP" --connect agent-stdio >/dev/null 2>&1 &
 pid=$!
 sleep 3
 # The daemon outlives a dropped ssh connection (the bridge is a separate, small process).
-agent=$(pgrep -f "codeyard-agent --daemon" | head -1)
+agent=$(pgrep -f "codeyard-agent --daemon" | head -1 || true)
 check "remote agent daemon (idle)" 8 "$(settled_mb "$agent")"
-kill $pid; wait $pid 2>/dev/null || true
+kill $pid 2>/dev/null || true; wait $pid 2>/dev/null || true
 # Kill the measured daemon by PID; otherwise it idles for 15 minutes before exiting.
 [ -n "$agent" ] && kill "$agent" 2>/dev/null || true
 

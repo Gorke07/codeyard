@@ -1,20 +1,22 @@
 name: release
 # Push a tag like v0.1.0 to build and publish a GitHub release.
 # The release notes are the matching section of CHANGELOG.md.
+# Nothing is published until every platform has built: macos and windows only upload artifacts,
+# the last job creates the release in one step, so a failed Windows build never leaves a half release.
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  macos:
-    runs-on: macos-latest
-    timeout-minutes: 90
+  # Cheap checks first: a bad tag or a stale doc fails in a minute, not after the macOS build.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - name: Check tag, Cargo version and changelog agree
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -22,7 +24,19 @@ jobs:
             'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="app"))')
           [ "$VERSION" = "$CARGO" ] || { echo "tag $VERSION != Cargo version $CARGO"; exit 1; }
           grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "CHANGELOG.md has no [$VERSION] section"; exit 1; }
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - run: scripts/arch-check.sh
+      - run: scripts/docs-check.sh
+      - run: scripts/licenses.sh
+
+  macos:
+    needs: verify
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version from the tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -31,8 +45,12 @@ jobs:
         with:
           tool: cargo-zigbuild
       - run: brew install zig
+      # A failed download is only a warning (older Xcodes ship `metal`); a missing compiler fails the release here,
+      # with a clear message, not minutes later inside gpui's build.rs.
       - name: Metal toolchain (GPUI shaders)
-        run: xcodebuild -downloadComponent MetalToolchain || true
+        run: |
+          xcodebuild -downloadComponent MetalToolchain || echo "::warning::xcodebuild -downloadComponent MetalToolchain failed"
+          xcrun -sdk macosx metal --version || { echo "::error::The Metal compiler is not available: GPUI cannot compile its shaders"; exit 1; }
 
       # SSH agents: copied to the server on first connect, so they ship inside the app.
       - name: Build agents
@@ -66,13 +84,15 @@ jobs:
           cp -R agents "$NAME/agents"
           scripts/licenses.sh copy "$NAME/licenses"
           tar -czf "dist/$NAME.tar.gz" "$NAME"
-          (cd dist && shasum -a 256 * > SHA256SUMS.txt)
+          # Name the files: a bare `*` would also list SHA256SUMS.txt itself, created empty by the redirect.
+          (cd dist && shasum -a 256 *.dmg *.tar.gz > SHA256SUMS.txt)
           awk -v v="$VERSION" '
             $0 ~ "^## \\[" v "\\]" { on=1; next }
             on && /^## \[/ { exit }
             on && /^\[[^]]+\]: / { exit }
             on { print }
           ' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md || { echo "CHANGELOG.md [$VERSION] section has no text: the release notes would be empty"; exit 1; }
           cat >> notes.md <<'NOTES'
 
           ### Install
@@ -84,12 +104,18 @@ jobs:
           Windows builds are unsigned and may show a SmartScreen warning.
           NOTES
 
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "v$VERSION" --notes-file notes.md --verify-tag
+      - name: Upload macOS release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: dist/
+          if-no-files-found: error
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes.md
+          if-no-files-found: error
 
   windows:
     needs: macos
@@ -113,16 +139,59 @@ jobs:
           if (-not (Get-ChildItem target/windows/*-setup.exe)) {
             throw 'Windows installer was not generated'
           }
-      - name: Publish Windows release files
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checksums for the Windows files
         run: |
           $files = @(Get-ChildItem target/windows/*.zip, target/windows/*-setup.exe)
+          if ($files.Count -lt 2) { throw 'expected the ZIP and the setup EXE' }
           $checksums = $files | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
           }
-          $sumFile = 'target/windows/SHA256SUMS-windows.txt'
-          $checksums | Set-Content -Encoding ascii $sumFile
-          gh release upload $env:GITHUB_REF_NAME @($files.FullName) $sumFile
-          if ($LASTEXITCODE -ne 0) { throw 'Windows release upload failed' }
+          $checksums | Set-Content -Encoding ascii target/windows/SHA256SUMS-windows.txt
+      - name: Upload Windows release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            target/windows/*.zip
+            target/windows/*-setup.exe
+            target/windows/SHA256SUMS-windows.txt
+          if-no-files-found: error
+
+  # The only job that writes to the repository, and only once everything above succeeded.
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-macos
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: notes
+      - name: Merge checksums and verify every file against them
+        working-directory: dist
+        run: |
+          cat SHA256SUMS.txt SHA256SUMS-windows.txt > SHA256SUMS.all
+          mv SHA256SUMS.all SHA256SUMS.txt
+          rm SHA256SUMS-windows.txt
+          # A mismatch here means an artifact was corrupted between the build and this job.
+          sha256sum -c SHA256SUMS.txt
+          [ "$(grep -c . SHA256SUMS.txt)" -ge 4 ] || { echo "expected at least the DMG, tar.gz, ZIP and setup EXE"; exit 1; }
+          ls -l
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" --notes-file notes/notes.md --verify-tag

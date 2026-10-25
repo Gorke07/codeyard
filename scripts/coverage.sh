@@ -13,6 +13,8 @@ out=coverage
 mkdir -p "$out"
 ignore='(^|/)(vendor|target)/|/\.rustup/|/tests?\.rs$|_tests?\.rs$|/tests/|/testdata/|/grammars/|/test_[a-z_]+\.rs$'
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0
+# Instrumented binaries are several times slower; the SSH tests' wait limits scale with this.
+export CODEYARD_TEST_TIMEOUT_SCALE="${CODEYARD_TEST_TIMEOUT_SCALE:-4}"
 cargo llvm-cov clean --workspace
 # qa_debug_real_cargo_project_without_config debugs a real cargo project; with
 # CARGO_PROFILE_DEV_DEBUG=0 it cannot find a breakpoint, so only this test is skipped here

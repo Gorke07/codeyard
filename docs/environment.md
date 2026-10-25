@@ -31,4 +31,7 @@ All variables are optional. `scripts/docs-check.sh` fails when the code reads a 
 | `CODEYARD_ASKPASS_EXE`, `CODEYARD_ASKPASS_SOCK` | Internal: the executable `ssh` runs as `SSH_ASKPASS` and the socket it answers on. Tests point the first at a test binary. |
 | `CODEYARD_QA_DIR`, `CODEYARD_QA_TMP` | Base folders for test scratch files. |
 | `CODEYARD_QA_SEEDS`, `CODEYARD_QA_SEED_BASE` | Number of random sessions and the first seed of `qa_random_new_commands_many_seeds`. |
+| `CODEYARD_REQUIRE_SSHD` | Set to `1` to make the SSH integration tests fail instead of skipping when no usable `sshd` or agent binary is found. Without it a skipped test prints a `SKIPPED` line and passes. CI sets it on the jobs that ship `sshd`. |
+| `CODEYARD_REQUIRE_TOOLS` | Same for tests that need an external tool (python3, node, clang, lldb-dap, debugpy, go, dlv, clangd): `1` for all of them, or a comma-separated list such as `python3,clang`. |
+| `CODEYARD_TEST_TIMEOUT_SCALE` | Multiplier for the tests' wait timeouts (default 1). `scripts/coverage.sh` sets 4 because instrumented builds are slow. |
 | `CODEYARD_TR_DICT_DIR` | Folder with a Turkish Hunspell dictionary for the manual `cargo test -p spell -- --ignored turkish` check. |

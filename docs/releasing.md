@@ -1,7 +1,15 @@
 # Releasing
 
-The `release.yml` workflow builds and publishes a release when a `vX.Y.Z` tag is pushed. The steps below are the same
-procedure by hand, for when the workflow cannot be used.
+The `release.yml` workflow builds and publishes a release when a `vX.Y.Z` tag is pushed. It runs four jobs:
+
+1. `verify` checks that the tag, the Cargo version and the changelog agree, then runs `arch-check`, `docs-check` and `licenses.sh`.
+2. `macos` builds the SSH agents, the app, the DMG and the tar.gz, and uploads them with the release notes as artifacts.
+3. `windows` builds the ZIP and the setup EXE from those agents and uploads them as an artifact.
+4. `publish` merges the checksums, verifies every file against them and creates the release in one step.
+
+Nothing is published before all of them succeed, so a failed Windows build leaves no half release: fix it and push the tag
+again (delete the tag first with `git push origin :refs/tags/vX.Y.Z`; no release exists yet to remove). The steps below are
+the same procedure by hand, for when the workflow cannot be used.
 
 ## Steps
 
