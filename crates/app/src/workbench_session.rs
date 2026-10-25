@@ -210,15 +210,20 @@ impl Workbench {
             return;
         }
         let Some(last) = self.persist.recent.first().cloned() else { return };
-        match last.host {
-            None if std::path::Path::new(&last.path).is_dir() => self.set_root(last.path, cx),
+        self.reopen(last.host, last.path, window, cx);
+    }
+
+    /// Opens a folder from an earlier session (this computer, or an SSH host: it connects, which may ask for a password).
+    pub fn reopen(&mut self, host: Option<String>, path: String, window: &mut Window, cx: &mut Context<Self>) {
+        match host {
+            None if std::path::Path::new(&path).is_dir() => self.set_root(path, cx),
             // Folder deleted or moved: stay on the welcome screen and say why.
             None => {
-                self.notice = Some(Notice::Info(crate::i18n::tf("{} no longer exists, so it was not reopened.", &[&tilde(&last.path)]).into()));
+                self.notice = Some(Notice::Info(crate::i18n::tf("{} no longer exists, so it was not reopened.", &[&tilde(&path)]).into()));
                 cx.notify();
             }
             Some(alias) => {
-                self.remote.pending_path = Some(last.path);
+                self.remote.pending_path = Some(path);
                 self.connect(alias, window, cx);
             }
         }

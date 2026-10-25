@@ -76,14 +76,16 @@ fn update_windows_setup_command_line_is_silent_and_never_reboots() {
 #[test]
 fn update_relaunch_passes_pid_and_path_as_arguments_not_script_text() {
     let app = Path::new("/Applications/My \"Code\"; rm -rf $HOME.app");
-    let c = relaunch_with(4242, app, Path::new("/usr/bin/open"));
+    let c = relaunch_with(4242, app, Path::new("/usr/bin/open"), &["--after-update", "x; $(y)"]);
     assert_eq!(c.get_program(), "/bin/sh");
     let args: Vec<_> = c.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
     assert_eq!(args[0], "-c");
     assert!(!args[1].contains("Applications") && !args[1].contains("4242"), "script text is constant");
-    assert_eq!(args[3..], ["4242", app.to_str().unwrap(), "/usr/bin/open"]);
+    assert!(!args[1].contains("after-update"), "the app's arguments are not script text either");
+    assert_eq!(args[3..], ["4242", app.to_str().unwrap(), "/usr/bin/open", "--after-update", "x; $(y)"]);
     let plan = InstallPlan::MacApp { app: "/Applications/Codeyard.app".into() };
-    assert_eq!(relaunch_command(&plan).unwrap().get_args().nth(4).unwrap(), "/Applications/Codeyard.app");
+    let args: Vec<_> = relaunch_command(&plan).unwrap().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+    assert_eq!((args[4].as_str(), args[6..].to_vec()), ("/Applications/Codeyard.app", vec!["--after-update".to_string()]), "{args:?}");
     assert!(relaunch_command(&InstallPlan::WindowsInstaller).is_none());
 }
 
@@ -99,12 +101,12 @@ fn update_relaunch_waits_for_the_process_to_exit_then_opens_the_app() {
     std::fs::set_permissions(&opener, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let mut target = Command::new("sleep").arg("0.6").spawn().unwrap();
-    let mut helper = relaunch_with(target.id(), Path::new("/Apps/New Codeyard.app"), &opener).spawn().unwrap();
+    let mut helper = relaunch_with(target.id(), Path::new("/Apps/New Codeyard.app"), &opener, &["--after-update"]).spawn().unwrap();
     std::thread::sleep(Duration::from_millis(300));
     assert!(!marker.exists(), "still waiting for the old process");
     target.wait().unwrap();
     assert!(helper.wait().unwrap().success());
-    assert_eq!(read(&marker).trim(), "-n /Apps/New Codeyard.app");
+    assert_eq!(read(&marker).trim(), "-n /Apps/New Codeyard.app --args --after-update");
 }
 
 #[test]

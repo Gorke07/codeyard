@@ -143,6 +143,7 @@ Codeyard couldn't reach the update server. Check your internet connection and tr
 Codeyard couldn't set up a secure connection to the update server. Check that your date and time are right and that no proxy or security software is blocking it, then try again.	
 Codeyard is still installing an update	
 Codeyard is up to date	
+Codeyard will reopen your windows.	
 Codeyard {} is available	
 Codeyard {} is available.	
 Codeyard {} is available. Click for details.	
@@ -1443,6 +1444,7 @@ Whole word
 Whole word (⌥W)	
 Width of the line cursor (px)	
 Window	
+Windows on a server reconnect, which can ask for a password.	
 Without Full Disk Access, Desktop, Documents or external drives may look empty.	
 Word Wrap	
 Workbench	
@@ -1459,6 +1461,7 @@ You · Uncommitted changes
 Your changes will be lost if you don't save them.	
 Your commits on this branch are rewritten on top of it (their hashes change). Conflicts stop the rebase; resolve them and use Git: Continue Rebase, or Git: Abort Rebase.	
 Your open files and unsaved changes come back after the restart.	
+Your open files come back after the restart.	
 Your public key (~/.ssh/id_ed25519.pub; created if you have none) is added to the server's authorized_keys, so later connections need no password. You may be asked for the server's password once.	
 Zoom	
 Zoom In	

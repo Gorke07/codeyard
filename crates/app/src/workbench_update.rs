@@ -23,6 +23,7 @@ use crate::markdown;
 use crate::update::{ErrorKind, Policy, Progress, Release, UpdateError, higher_version, is_rollback, retry_allowed, should_check_now};
 pub(crate) use crate::update_backend::UpdateBackend;
 use crate::update_install::{InstallKind, InstallPlan, ManualReason};
+use crate::update_restart;
 
 /// Keys in the state database (machine-written values stay out of `settings.jsonc`).
 const LAST_CHECK: &str = "update.last_check";
@@ -259,6 +260,33 @@ pub(super) struct StatusItem {
     pub(super) tone: Tone,
     pub(super) label: SharedString,
     pub(super) tip: SharedString,
+}
+
+/// What the Ready dialog may say about the restart; each flag is something that will really happen, given the settings.
+#[derive(Clone, Copy)]
+struct Promise {
+    /// A window is on an SSH host: it reconnects, which may ask for a password.
+    remote: bool,
+    /// The tabs come back (`window.restoreSession`).
+    files: bool,
+    /// Unsaved edits come back too (`window.restoreSession` and `files.hotExit`).
+    unsaved: bool,
+}
+
+impl Promise {
+    fn paragraphs(self) -> Vec<String> {
+        let mut text = t("Codeyard will reopen your windows.").to_string();
+        if self.unsaved {
+            text = format!("{text} {}", t("Your open files and unsaved changes come back after the restart."));
+        } else if self.files {
+            text = format!("{text} {}", t("Your open files come back after the restart."));
+        }
+        let mut paragraphs = vec![text];
+        if self.remote {
+            paragraphs.push(t("Windows on a server reconnect, which can ask for a password.").to_string());
+        }
+        paragraphs
+    }
 }
 
 fn button(action: UpdateAction, label: &str, primary: bool) -> DialogButton {
@@ -503,9 +531,14 @@ impl Workbench {
             }),
             (Dialog::Update, UpdateState::Ready { .. }) => {
                 let mut paragraphs: Vec<SharedString> = vec![t("Restart Codeyard to finish.").into()];
-                if cx.global::<Settings>().hot_exit {
-                    paragraphs.push(t("Your open files and unsaved changes come back after the restart.").into());
-                }
+                let s = cx.global::<Settings>();
+                let (folders, _) = self.reopenable_windows(cx);
+                let promised = (self.persist.data_dir.is_some() && !folders.is_empty()).then_some(Promise {
+                    remote: folders.iter().any(|f| f.host.is_some()),
+                    files: s.restore_session,
+                    unsaved: s.restore_session && s.hot_exit,
+                });
+                paragraphs.extend(promised.into_iter().flat_map(Promise::paragraphs).map(SharedString::from));
                 Some(DialogModel {
                     icon: "check",
                     tone: Tone::Success,
@@ -1069,9 +1102,13 @@ impl Workbench {
     /// The last step of quitting or restarting, after hot exit has saved everything. The new version is started BEFORE this
     /// process ends (its helper waits for us to exit); if that fails nothing is quit, so the user is not left without an editor.
     pub(super) fn finish_quit(&mut self, mode: QuitMode, cx: &mut Context<Self>) {
+        let handed_over = matches!(mode, QuitMode::Restart(_)) && self.write_handover(cx);
         if let QuitMode::Restart(Some(plan)) = &mode
             && let Err(e) = self.update.backend.relaunch(plan)
         {
+            if handed_over && let Some(dir) = &self.persist.data_dir {
+                update_restart::discard(dir);
+            }
             self.notice =
                 Some(Notice::Error(tf("Codeyard could not start the new version: {}. The update is installed; open Codeyard again to use it.", &[&e]).into()));
             cx.notify();
@@ -1079,6 +1116,41 @@ impl Workbench {
         }
         let backend = self.update.backend.clone();
         backend.quit(cx);
+    }
+
+    /// The folders of all windows, in window order, and the index of the one in front (this window when none is): what the new
+    /// version reopens. Windows without a folder have nothing to come back to.
+    pub(super) fn reopenable_windows(&self, cx: &App) -> (Vec<update_restart::Folder>, usize) {
+        let (me, active) = (self.window_handle, cx.active_window());
+        let (mut folders, mut focused, mut mine) = (Vec::new(), None, None);
+        for w in cx.windows() {
+            let key = if w == me { self.workspace_key(cx) } else { w.downcast::<Workbench>().and_then(|h| h.read(cx).ok()?.workspace_key(cx)) };
+            let Some((host, path)) = key else { continue };
+            if w == me {
+                mine = Some(folders.len());
+            }
+            if Some(w) == active {
+                focused = Some(folders.len());
+            }
+            folders.push(update_restart::Folder { host, path });
+        }
+        (folders, focused.or(mine).unwrap_or(0))
+    }
+
+    /// Leaves the folders of all windows for the new version (`update_restart.rs`). `false`: nothing was written.
+    fn write_handover(&self, cx: &App) -> bool {
+        let (UpdateState::Ready { version, .. }, Some(dir)) = (&self.update.state, &self.persist.data_dir) else { return false };
+        let (windows, focused) = self.reopenable_windows(cx);
+        if windows.is_empty() {
+            return false;
+        }
+        match update_restart::write(dir, &update_restart::Handover { to: version.clone(), windows, focused }, self.update.backend.now()) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("could not leave the open windows for the new version: {e}");
+                false
+            }
+        }
     }
 
     /// Is the app being swapped in, by this window or any other?
@@ -1193,6 +1265,18 @@ fn unix_ms(time: SystemTime) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_restart_promise_has_one_sentence_per_thing_that_will_happen() {
+        let said = |remote, files, unsaved| Promise { remote, files, unsaved }.paragraphs();
+        assert_eq!(said(false, false, false), ["Codeyard will reopen your windows."]);
+        assert_eq!(said(false, true, false), ["Codeyard will reopen your windows. Your open files come back after the restart."]);
+        assert_eq!(said(false, true, true), ["Codeyard will reopen your windows. Your open files and unsaved changes come back after the restart."]);
+        assert_eq!(said(true, false, false), ["Codeyard will reopen your windows.", "Windows on a server reconnect, which can ask for a password."]);
+        let _tr = crate::i18n::LangGuard::set("tr");
+        let tr = said(true, true, true);
+        assert!(tr.iter().all(|p| !p.contains("Codeyard will") && !p.contains("Windows on") && !p.contains("come back")), "{tr:?}");
+    }
 
     #[test]
     fn sizes_are_shown_in_megabytes_with_one_decimal() {

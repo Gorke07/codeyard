@@ -1859,6 +1859,9 @@ Update installed	Güncelleme kuruldu
 Update installed. Restart Codeyard to finish.	Güncelleme kuruldu. Bitirmek için Codeyard'ı yeniden başlatın.
 Restart Codeyard to finish.	Bitirmek için Codeyard'ı yeniden başlatın.
 Your open files and unsaved changes come back after the restart.	Açık dosyalarınız ve kaydedilmemiş değişiklikleriniz yeniden başlatmadan sonra geri gelir.
+Your open files come back after the restart.	Açık dosyalarınız yeniden başlatmadan sonra geri gelir.
+Codeyard will reopen your windows.	Codeyard pencerelerinizi yeniden açacak.
+Windows on a server reconnect, which can ask for a password.	Sunucudaki pencereler yeniden bağlanır; bu sırada parola istenebilir.
 Restart Now	Şimdi Yeniden Başlat
 Restart to update	Güncellemek için yeniden başlat
 Codeyard {} is installed. Click for details.	Codeyard {} kuruldu. Ayrıntılar için tıklayın.

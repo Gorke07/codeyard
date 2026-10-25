@@ -137,22 +137,24 @@ fn installer_command(setup: &Path) -> Command {
 
 // --- Relaunch ---
 
-/// Waits (at most a minute) for `$1` to exit, then opens the app at `$2` as a new instance with `$3`.
-/// Paths and the pid are positional arguments, never part of the script text.
-const RELAUNCH_SCRIPT: &str = r#"i=0; while kill -0 "$1" 2>/dev/null; do i=$((i+1)); [ "$i" -le 300 ] || exit 1; sleep 0.2; done; exec "$3" -n "$2""#;
+/// Waits (at most a minute) for `$1` to exit, then opens the app at `$2` as a new instance with `$3`, handing the arguments after
+/// the third on to the app (`open --args`). Paths, the pid and the app's arguments are positional arguments, never part of the
+/// script text.
+const RELAUNCH_SCRIPT: &str = r#"i=0; while kill -0 "$1" 2>/dev/null; do i=$((i+1)); [ "$i" -le 300 ] || exit 1; sleep 0.2; done; app=$2; opener=$3; shift 3; exec "$opener" -n "$app" --args "$@""#;
 
 /// The command that starts the new version after this process has exited. Spawn it BEFORE quitting; it is detached
-/// (no stdio, own process group) and survives us. `None` on Windows, where Setup starts the app.
+/// (no stdio, own process group) and survives us. The new version gets `--after-update`, which makes it reopen the windows the
+/// restart left for it (`update_restart.rs`). `None` on Windows, where Setup starts the app (`codeyard.iss` adds the same flag).
 pub fn relaunch_command(plan: &InstallPlan) -> Option<Command> {
     match plan {
-        InstallPlan::MacApp { app } => Some(relaunch_with(std::process::id(), app, Path::new("/usr/bin/open"))),
+        InstallPlan::MacApp { app } => Some(relaunch_with(std::process::id(), app, Path::new("/usr/bin/open"), &[crate::update_restart::FLAG])),
         InstallPlan::WindowsInstaller => None,
     }
 }
 
-fn relaunch_with(pid: u32, app: &Path, opener: &Path) -> Command {
+fn relaunch_with(pid: u32, app: &Path, opener: &Path, app_args: &[&str]) -> Command {
     let mut c = Command::new("/bin/sh");
-    c.args(["-c", RELAUNCH_SCRIPT, "codeyard-relaunch"]).arg(pid.to_string()).arg(app).arg(opener);
+    c.args(["-c", RELAUNCH_SCRIPT, "codeyard-relaunch"]).arg(pid.to_string()).arg(app).arg(opener).args(app_args);
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(unix)]
     {

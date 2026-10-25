@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Updates.** *Help: Check for Updates…* (also in the Help menu, and under the app menu on macOS) opens a dialog that checks, shows the
   release notes, downloads with progress, verifies against the signed checksums, installs and restarts through the normal quit path
-  (unsaved work comes back). *Later*, *Skip This Version* and *Release Page* are there too, an update on offer or on its way shows in the
+  (your windows reopen, with their tabs and unsaved work, as far as `window.restoreSession` and `files.hotExit` allow; the dialog says what will come back). *Later*, *Skip This Version* and *Release Page* are there too, an update on offer or on its way shows in the
   status bar, and a copy that cannot replace itself offers the download page with the reason. The new setting `update.check`
   (`ask`, `daily`, `manual`; your own settings only) decides whether Codeyard looks by itself: the default `ask` checks nothing and, once,
   asks whether to check daily. `daily` sends one request a day to github.com for the signed checksum list and nothing else.

@@ -104,6 +104,7 @@ mod ui;
 mod update;
 mod update_backend;
 mod update_install;
+mod update_restart;
 #[cfg(test)]
 mod update_ui_tests;
 mod vscode;
@@ -493,6 +494,21 @@ struct Args {
     panel: Option<String>,
     /// Hidden developer flag: `;`-separated command names, run in order after startup.
     run: Vec<String>,
+    /// Started by the relaunch after an update: reopen the windows the old version left (`update_restart.rs`).
+    after_update: bool,
+}
+
+/// The windows an update restart left for this process; the file is consumed here. Anything wrong with it is logged and means
+/// an ordinary start.
+fn update_handover() -> Option<update_restart::Handover> {
+    let dir = workbench::state_path()?.parent()?.to_path_buf();
+    match update_restart::take(&dir, env!("CARGO_PKG_VERSION"), std::time::SystemTime::now()) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("not reopening the windows from before the update: {e}");
+            None
+        }
+    }
 }
 
 /// The first-run question and the daily check belong to a real session: not to debug builds (unless a developer asked for a
@@ -508,13 +524,14 @@ fn version_line() -> String {
 }
 
 fn parse_args() -> Args {
-    let mut args = Args { path: None, connect: None, theme: None, terminal: false, search: None, panel: None, run: Vec::new() };
+    let mut args = Args { path: None, connect: None, theme: None, terminal: false, search: None, panel: None, run: Vec::new(), after_update: false };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
             "--connect" => args.connect = it.next(),
             "--theme" => args.theme = it.next(),
             "--terminal" => args.terminal = true,
+            update_restart::FLAG => args.after_update = true,
             "--search" => args.search = it.next(),
             "--panel" => args.panel = it.next(),
             "--do" => args.run = it.next().map(|v| v.split(';').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()).unwrap_or_default(),
@@ -686,6 +703,8 @@ fn main() {
     workbench::migrate_legacy_dirs();
     crash::install(workbench::crash_dir());
     let args = parse_args();
+    // A folder or host on the command line wins; the file is consumed either way.
+    let reopen = args.after_update.then(update_handover).flatten().filter(|_| args.path.is_none() && args.connect.is_none());
     // Finder's "Open With", dropping on the Dock icon and `open -a Codeyard x` addresses are forwarded to the window through this channel
     // (the handler must be set up before the app opens; a request that arrives on first launch isn't lost either).
     let (open_tx, mut open_rx) = futures::channel::mpsc::unbounded::<Vec<String>>();
@@ -729,7 +748,7 @@ fn main() {
                 }
                 if let Some(path) = &args.path {
                     wb.open_path(path, window, cx);
-                } else if args.connect.is_none() {
+                } else if args.connect.is_none() && reopen.is_none() {
                     wb.restore_last(window, cx);
                 }
                 if args.terminal {
@@ -753,6 +772,9 @@ fn main() {
                 cx.activate(true);
             })
             .ok();
+        if let Some(h) = &reopen {
+            update_restart::reopen_windows(h, window, &mut open_workbench_window, cx);
+        }
         #[cfg(target_os = "macos")]
         if std::env::var_os("CODEYARD_DUMP_DOCK").is_some() {
             cx.spawn(async move |cx| {

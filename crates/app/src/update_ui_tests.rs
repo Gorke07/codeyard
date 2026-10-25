@@ -1410,3 +1410,305 @@ fn the_reasons_failures_and_notes_line_are_turkish_too(cx: &mut TestAppContext) 
         press(&wb, cx, "Kapat");
     }
 }
+
+// --- The windows come back after the restart ---
+
+use crate::update_restart::{self, Folder, Handover};
+
+fn ready(wb: &Entity<Workbench>, cx: &mut VisualTestContext, fake: &Fake) {
+    offered(wb, cx, fake, "0.2.0");
+    fake.download_does(Download::Done);
+    press(wb, cx, "Install and Restart");
+    wait_state(wb, cx, "ready 0.2.0");
+}
+
+/// The window the old process had, as the new one finds it: a fresh workbench on the same state folder.
+fn new_process(cx: &mut VisualTestContext, home: &std::path::Path) -> Entity<Workbench> {
+    let (db, data) = (home.join("state.db"), home.to_path_buf());
+    let wb = cx.update(|window, cx| {
+        window.replace_root(cx, |window, cx| {
+            let mut w = Workbench::with_state(state::State::open(&db).ok(), None, window, cx);
+            w.set_data_dir(data);
+            w
+        })
+    });
+    wb.update_in(cx, |w, window, cx| window.focus(&w.focus_handle(cx)));
+    wb
+}
+
+/// What `update_restart::reopen_windows` does for the window the process started with (the other windows are in the two-window tests).
+fn land(wb: &Entity<Workbench>, cx: &mut VisualTestContext, h: &Handover) {
+    let Folder { host, path } = h.windows[0].clone();
+    wb.update_in(cx, |wb, window, cx| wb.reopen(host, path, window, cx));
+    cx.run_until_parked();
+}
+
+fn fake_now(fake: &Fake) -> SystemTime {
+    fake.now()
+}
+
+#[gpui::test]
+fn restarting_leaves_the_open_folder_for_the_new_version(cx: &mut TestAppContext) {
+    let home = fresh("restart-handover-home");
+    let dir = std::fs::canonicalize(project("restart-handover")).unwrap();
+    let (wb, cx) = setup_persistent(cx, &home);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    open(&wb, &dir, cx);
+    ready(&wb, cx, &fake);
+    assert!(!home.join("update-restart.json").exists(), "nothing is left before the restart");
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.count("quit"), 1);
+    let h = update_restart::take(&home, "0.2.0", fake_now(&fake)).unwrap().expect("the file the new version reads");
+    assert_eq!(h, Handover { to: "0.2.0".into(), windows: vec![Folder { host: None, path: dir.to_string_lossy().into_owned() }], focused: 0 });
+}
+
+#[gpui::test]
+fn a_restart_with_no_folder_open_leaves_nothing(cx: &mut TestAppContext) {
+    let home = fresh("restart-handover-none");
+    let (wb, cx) = setup_persistent(cx, &home);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    ready(&wb, cx, &fake);
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.count("quit"), 1);
+    assert!(!home.join("update-restart.json").exists());
+}
+
+#[gpui::test]
+fn a_restart_that_cannot_start_the_new_version_takes_the_file_back(cx: &mut TestAppContext) {
+    let home = fresh("restart-handover-fails");
+    let dir = project("restart-handover-fails-dir");
+    let (wb, cx) = setup_persistent(cx, &home);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    open(&wb, &dir, cx);
+    ready(&wb, cx, &fake);
+    fake.relaunch_fails.store(true, Ordering::SeqCst);
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.count("quit"), 0);
+    assert!(!home.join("update-restart.json").exists(), "a later start must not pick up a restart that did not happen");
+}
+
+/// The whole path: unsaved edits and the tab are saved by the restart, the handover names the folder, and the new process, which
+/// would show the start page on its own (`window.startup` is `welcome`), lands in the folder with the edit still unsaved.
+#[gpui::test]
+fn after_the_restart_the_folder_and_its_unsaved_edit_are_back_though_startup_is_welcome(cx: &mut TestAppContext) {
+    let home = fresh("restart-land-home");
+    let dir = std::fs::canonicalize(project("restart-land")).unwrap();
+    let (wb, cx) = setup_persistent(cx, &home);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    open(&wb, &dir, cx);
+    open_in(&wb, &dir.join("src/main.rs"), cx);
+    cx.simulate_input("// not saved\n");
+    cx.executor().advance_clock(Duration::from_secs(2)); // the backup timer
+    cx.run_until_parked();
+    ready(&wb, cx, &fake);
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.count("quit"), 1, "no question: hot exit is on");
+    let handover = update_restart::take(&home, "0.2.0", fake_now(&fake)).unwrap();
+
+    cx.update(|_, cx| cx.global_mut::<crate::settings::Settings>().startup = crate::settings::Startup::Welcome);
+    let first = new_process(cx, &home);
+    // Without the handover this start is the old behaviour: the start page.
+    first.update_in(cx, |wb, window, cx| wb.restore_last(window, cx));
+    cx.run_until_parked();
+    assert_eq!(first.read_with(cx, |wb, cx| wb.root_for_test(cx)), None);
+
+    land(&first, cx, &handover.expect("handover"));
+    assert_eq!(first.read_with(cx, |wb, cx| wb.root_for_test(cx)).as_deref(), dir.to_str());
+    let text = first.read_with(cx, |wb, cx| wb.active_editor_entity().map(|e| e.read(cx).text()));
+    assert_eq!(text.as_deref(), Some("// not saved\nfn main() {}\n"));
+    assert!(first.read_with(cx, |wb, cx| wb.any_dirty(cx)), "still unsaved");
+    assert_eq!(std::fs::read_to_string(dir.join("src/main.rs")).unwrap(), "fn main() {}\n");
+}
+
+/// What comes back inside the window follows the user's settings, and the dialog says no more than that. One test window per case:
+/// a restart prepares every window of the app, so the windows of an earlier case would take part.
+fn session_case(cx: &mut TestAppContext, restore: bool, hot: bool, tab: bool, edit: bool) {
+    let n = format!("restore={restore} hotExit={hot}");
+    let home = fresh(&format!("restart-settings-home-{restore}-{hot}"));
+    let dir = std::fs::canonicalize(project(&format!("restart-settings-{restore}-{hot}"))).unwrap();
+    let (wb, cx) = setup_persistent(cx, &home);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    open(&wb, &dir, cx);
+    open_in(&wb, &dir.join("src/main.rs"), cx);
+    // With hot exit off, an unsaved edit would make the restart ask first: nothing is typed then.
+    if hot {
+        cx.simulate_input("// edit\n");
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        let s = cx.global_mut::<crate::settings::Settings>();
+        (s.restore_session, s.hot_exit) = (restore, hot);
+    });
+    ready(&wb, cx, &fake);
+    let said = dialog(&wb, cx).unwrap().text;
+    press(&wb, cx, "Restart Now");
+    assert_eq!(fake.count("quit"), 1, "{n}");
+    let h = update_restart::take(&home, "0.2.0", fake_now(&fake)).unwrap().unwrap();
+    let first = new_process(cx, &home);
+    land(&first, cx, &h);
+    assert_eq!(first.read_with(cx, |wb, cx| wb.root_for_test(cx)).as_deref(), dir.to_str(), "{n}: the folder always comes back");
+    let tabs = first.read_with(cx, |wb, cx| wb.open_paths(cx));
+    let edit_back = first.read_with(cx, |wb, cx| wb.any_dirty(cx));
+    assert_eq!((!tabs.is_empty(), edit_back), (tab, edit), "{n}: {tabs:?}");
+    // The dialog promised exactly that.
+    assert!(said.contains("Codeyard will reopen your windows."), "{n}: {said}");
+    assert_eq!(said.contains("Your open files and unsaved changes come back"), edit, "{n}: {said}");
+    assert_eq!(said.contains("Your open files come back"), tab && !edit, "{n}: {said}");
+}
+
+#[gpui::test]
+fn after_a_restart_tabs_and_unsaved_edits_come_back_and_the_dialog_says_so(cx: &mut TestAppContext) {
+    session_case(cx, true, true, true, true);
+}
+
+#[gpui::test]
+fn with_hot_exit_off_the_tabs_come_back_and_the_dialog_does_not_mention_unsaved_edits(cx: &mut TestAppContext) {
+    session_case(cx, true, false, true, false);
+}
+
+#[gpui::test]
+fn without_session_restore_only_the_folder_comes_back_and_the_dialog_says_only_that(cx: &mut TestAppContext) {
+    session_case(cx, false, true, false, false);
+}
+
+#[gpui::test]
+fn without_session_restore_and_hot_exit_only_the_folder_comes_back(cx: &mut TestAppContext) {
+    session_case(cx, false, false, false, false);
+}
+
+#[gpui::test]
+fn the_ready_dialog_promises_nothing_when_there_is_nothing_to_reopen(cx: &mut TestAppContext) {
+    let home = fresh("restart-dialog-none");
+    let (wb, cx) = setup_persistent(cx, &home);
+    let fake = Fake::new();
+    wb.update(cx, |wb, _| wb.set_update_backend_for_test(fake.clone()));
+    ready(&wb, cx, &fake);
+    let said = dialog(&wb, cx).unwrap().text;
+    assert!(said.contains("Restart Codeyard to finish.") && !said.contains("come back") && !said.contains("reopen"), "{said}");
+}
+
+#[gpui::test]
+fn the_ready_dialog_promises_nothing_when_no_hand_over_can_be_written(cx: &mut TestAppContext) {
+    let dir = project("restart-dialog-nodata");
+    let (wb, cx, fake) = rig(cx); // an in-memory state: no state folder to leave the file in
+    open(&wb, &dir, cx);
+    ready(&wb, cx, &fake);
+    let said = dialog(&wb, cx).unwrap().text;
+    assert!(!said.contains("reopen") && !said.contains("come back"), "{said}");
+}
+
+fn open_test_window(cx: &mut TestAppContext) -> gpui::WindowHandle<Workbench> {
+    cx.update(|app| {
+        app.open_window(gpui::WindowOptions::default(), |window, cx| cx.new(|cx| Workbench::with_state(state::State::in_memory().ok(), None, window, cx)))
+            .expect("a window")
+    })
+}
+
+#[gpui::test]
+fn every_window_with_a_folder_is_left_for_the_new_version_and_the_one_in_front_is_marked(cx: &mut TestAppContext) {
+    crate::qa_workbench_tests::globals(cx);
+    let home = fresh("restart-two-home");
+    let canon = |name: &str| std::fs::canonicalize(project(name)).unwrap().to_string_lossy().into_owned();
+    let (a, b, c) = (canon("restart-two-a"), canon("restart-two-b"), canon("restart-two-c"));
+    let (first, second, third, _no_folder) = (open_test_window(cx), open_test_window(cx), open_test_window(cx), open_test_window(cx));
+    let fake = Fake::new();
+    for (w, dir) in [(first, &a), (second, &b), (third, &c)] {
+        w.update(cx, |wb, window, cx| wb.open_path(dir, window, cx)).unwrap();
+    }
+    cx.run_until_parked();
+    first
+        .update(cx, |wb, window, cx| {
+            wb.set_data_dir(home.clone());
+            wb.set_update_backend_for_test(fake.clone());
+            window.focus(&wb.focus_handle(cx));
+            fake.check_returns(Ok(Some(release("0.2.0"))));
+            wb.run_command_for_test("Help: Check for Updates…", window, cx);
+        })
+        .unwrap();
+    let state_of = |cx: &mut TestAppContext| first.read_with(cx, |wb, _| wb.update_state_for_test()).unwrap();
+    let wait = |cx: &mut TestAppContext, want: &str| {
+        let start = std::time::Instant::now();
+        while state_of(cx) != want {
+            assert!(start.elapsed() < Duration::from_secs(10), "timeout: {want}, now {}", state_of(cx));
+            cx.run_until_parked();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    wait(cx, "available 0.2.0");
+    fake.download_does(Download::Done);
+    first.update(cx, |wb, window, cx| wb.press_update_button_for_test("Install and Restart", window, cx)).unwrap();
+    wait(cx, "ready 0.2.0");
+    // The user is in the second window when they press the button in the first one's dialog.
+    second.update(cx, |_, window, _| window.activate_window()).unwrap();
+    let said = first.read_with(cx, |wb, cx| wb.update_dialog_for_test(cx)).unwrap().unwrap().text;
+    assert!(said.contains("Codeyard will reopen your windows."), "{said}");
+    first.update(cx, |wb, window, cx| wb.press_update_button_for_test("Restart Now", window, cx)).unwrap();
+    cx.run_until_parked();
+    assert_eq!(fake.count("quit"), 1);
+    let h = update_restart::take(&home, "0.2.0", fake_now(&fake)).unwrap().unwrap();
+    let folders: Vec<_> = h.windows.iter().map(|f| f.path.clone()).collect();
+    assert_eq!(folders, [a.clone(), b.clone(), c.clone()], "all three folders in window order; the empty window is not there");
+    assert_eq!(h.focused, 1, "the window that was in front");
+
+    // The new process: one window to start with, the others made for it.
+    let fresh_first = open_test_window(cx);
+    let mut made = Vec::new();
+    cx.update(|app| {
+        update_restart::reopen_windows(
+            &h,
+            fresh_first,
+            &mut |app| {
+                let w = app
+                    .open_window(gpui::WindowOptions::default(), |window, cx| {
+                        cx.new(|cx| Workbench::with_state(state::State::in_memory().ok(), None, window, cx))
+                    })
+                    .ok();
+                made.extend(w);
+                w
+            },
+            app,
+        )
+    });
+    cx.run_until_parked();
+    let roots: Vec<_> = std::iter::once(fresh_first).chain(made.iter().copied()).map(|w| w.read_with(cx, |wb, cx| wb.root_for_test(cx)).unwrap()).collect();
+    assert_eq!(roots, [Some(a), Some(b), Some(c)]);
+}
+
+#[gpui::test]
+fn a_folder_that_is_gone_is_said_so_and_the_other_windows_still_open(cx: &mut TestAppContext) {
+    crate::qa_workbench_tests::globals(cx);
+    let ok = std::fs::canonicalize(project("restart-gone-ok")).unwrap().to_string_lossy().into_owned();
+    let h = Handover {
+        to: "0.2.0".into(),
+        windows: vec![Folder { host: None, path: "/no/such/folder-codeyard".into() }, Folder { host: None, path: ok.clone() }],
+        focused: 1,
+    };
+    let first = open_test_window(cx);
+    let mut made = Vec::new();
+    cx.update(|app| {
+        update_restart::reopen_windows(
+            &h,
+            first,
+            &mut |app| {
+                let w = app
+                    .open_window(gpui::WindowOptions::default(), |window, cx| {
+                        cx.new(|cx| Workbench::with_state(state::State::in_memory().ok(), None, window, cx))
+                    })
+                    .ok();
+                made.extend(w);
+                w
+            },
+            app,
+        )
+    });
+    cx.run_until_parked();
+    let (error, message) = first.read_with(cx, |wb, _| wb.notice_for_test()).unwrap().expect("a notice");
+    assert!(!error && message.contains("no longer exists"), "{message}");
+    assert_eq!(made[0].read_with(cx, |wb, cx| wb.root_for_test(cx)).unwrap().as_deref(), Some(ok.as_str()));
+}

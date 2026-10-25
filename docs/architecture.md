@@ -121,7 +121,18 @@ for one. It downloads two small files from github.com (see [Updates](#updates) f
   installer, the clock and quitting are behind `UpdateBackend` (`update_backend.rs`), so tests script every outcome. Machine-written
   values (time of the last good check, skipped version, installed version, the notified version, when the question may come back) are
   keys `update.*` in the state database; the one setting, `update.check`, is user-only like `ui.language`. Restarting goes through the
-  normal quit path (hot exit), starts the new version first and quits second. While ANY window is swapping the app in, quitting asks in
+  normal quit path (hot exit), starts the new version first and quits second.
+  **The restart hand-over** (`update_restart.rs`): after hot exit has saved every window and before the relaunch, the old process writes
+  `update-restart.json` into the state folder (atomically): the version just installed, the time, and for each window with a folder its
+  local path or SSH alias + path, plus which window was in front. The relaunch helper starts the app with `--after-update`
+  (macOS: `open -n <app> --args --after-update`, the arguments are positional parameters of the script, never script text; Windows: the
+  `[Run]` entry of `codeyard.iss`, unverified there); only with that flag does `main` read the file, and it deletes it first: a second
+  start finds nothing. It is ignored (logged, ordinary start) when it is missing, unreadable, not valid, from another version, older than
+  ten minutes or from the future, or when a folder or `--connect` is on the command line. It is never read from a project and carries no
+  tabs: a window's tabs and unsaved edits come from the per-folder session when `set_root` opens the folder
+  (`window.restoreSession`, `files.hotExit`). If the relaunch fails the file is removed again. Why a file and not folder arguments: several
+  windows' paths would have to pass through `open --args` and the installer's parameters, with their quoting; and this way the
+  consumer can check age and version. While ANY window is swapping the app in, quitting asks in
   every window and that window cannot be closed (its result is the only thing that records the installed version). Closing the dialog
   of a failed update drops the failure, so its status item goes and the next background check is not held back. User-facing
   description: [user guide](user-guide.md#updates).

@@ -82,7 +82,8 @@ Root: HKA; Subkey: "{code:EnvKey}"; ValueType: expandsz; ValueName: "Path"; Valu
 Filename: "{app}\Codeyard.exe"; Description: "Launch Codeyard"; Flags: nowait postinstall skipifsilent
 ; In-app update (crates/app/src/update_install.rs runs Setup with /SILENT ... /relaunch=1): start the new version once.
 ; Setup's own restart of closed applications is turned off there (/NORESTARTAPPLICATIONS), so this is the only launch.
-Filename: "{app}\Codeyard.exe"; Flags: nowait runasoriginaluser; Check: RelaunchAfterUpdate
+; `--after-update` makes the new version reopen the windows the old one left (crates/app/src/update_restart.rs).
+Filename: "{app}\Codeyard.exe"; Parameters: "--after-update"; Flags: nowait runasoriginaluser; Check: RelaunchAfterUpdate
 
 [Code]
 function RelaunchAfterUpdate: Boolean;

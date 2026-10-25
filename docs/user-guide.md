@@ -376,8 +376,7 @@ That command works whatever the setting says, and shows its errors. Debug builds
 ask and never check by themselves.
 
 **The dialog.** *Checking*, then either "Codeyard is up to date" or the new version with its release notes. *Install and Restart*
-downloads the installer (progress in megabytes), checks it, replaces the app and offers *Restart Now*; unsaved work comes back after
-the restart like after any quit (hot exit; with `files.hotExit` off you are asked first). *Later* closes the dialog and keeps the item
+downloads the installer (progress in megabytes), checks it, replaces the app and offers *Restart Now* (*What comes back* below). *Later* closes the dialog and keeps the item
 in the status bar. *Skip This Version* hides that version from the notice and the item for good; a manual check still offers it and a
 newer version is not skipped. *Release Page* opens the release on GitHub. Esc or *Hide* during a download closes the dialog and the
 download goes on ("Updating… 40%" in the status bar; click it to come back); *Cancel* stops it and removes the partial file. Quitting
@@ -385,6 +384,17 @@ during a download cancels it; during the few seconds the app is being replaced (
 window does not close. The notes are reached with Tab and scroll with the arrow keys, Page Up/Down, Home and End (a screen reader is
 given their text, the first 8 KB of it; Codeyard draws at most the first 64 KB of very long notes and points to GitHub for the rest).
 Closing the dialog of a failed update dismisses the failure and its red status bar item.
+
+**What comes back after the restart.** Every window that has a folder open is reopened, on the same computer or SSH host, and the one that
+was in front is in front again; it does not matter what `window.startup` says, because a restart is not a launch. Windows that showed the
+start page stay away. What a window shows again is the same as after any quit: its tabs, cursors and layout when `window.restoreSession`
+is on, and the edits you had not saved when `files.hotExit` is on as well (with hot exit off you are asked before a restart that would
+lose edits). The dialog lists only what will happen with your settings. A window on an SSH host reconnects like *continue* does, which
+can ask for a password again; terminals and running programs do not survive a restart, and a folder that has been deleted is reported
+instead of reopened. Codeyard leaves the list of windows in a small file in its state folder just before it quits; the new version reads it
+once, only for ten minutes and only when it is the version that was just installed, and deletes it, so nothing is left to repeat the
+reopening later (details: [architecture.md](architecture.md#updates)). On Windows the installer starts the new version with the
+same flag; that has not been tried there yet.
 
 **How it is verified.** The checksum list must carry a valid Ed25519 signature made with the key built into Codeyard before anything in
 it is read; the release notes and the installer must match their signed SHA-256 (the installer is hashed again right before it is
