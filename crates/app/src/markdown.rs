@@ -572,6 +572,39 @@ fn block_view(b: &Block, id: &str, p: &Palette, depth: usize) -> gpui::AnyElemen
     }
 }
 
+/// The text of `blocks` without formatting, one line per paragraph, heading, list item or table row: what a screen reader
+/// is given for a document that is drawn as many separate elements.
+pub(crate) fn plain_text(blocks: &[Block]) -> String {
+    fn spans(s: &[Span]) -> String {
+        s.iter().map(|s| s.text.as_str()).collect()
+    }
+    fn walk(blocks: &[Block], out: &mut Vec<String>) {
+        for b in blocks {
+            match b {
+                Block::Heading(_, s) | Block::Paragraph(s) => out.push(spans(s)),
+                Block::Code { text, .. } => out.extend(text.lines().map(str::to_string)),
+                Block::Quote(inner) => walk(inner, out),
+                Block::List { items, .. } => {
+                    for (_, inner) in items {
+                        let mut item = Vec::new();
+                        walk(inner, &mut item);
+                        out.push(format!("- {}", item.join(" ")));
+                    }
+                }
+                Block::Rule => {}
+                Block::Table { head, rows, .. } => {
+                    for row in std::iter::once(head).chain(rows) {
+                        out.push(row.iter().map(|c| spans(c)).collect::<Vec<_>>().join("\t"));
+                    }
+                }
+            }
+        }
+    }
+    let mut lines = Vec::new();
+    walk(blocks, &mut lines);
+    lines.join("\n")
+}
+
 impl Render for MarkdownPreview {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.refresh(cx);

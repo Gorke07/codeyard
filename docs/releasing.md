@@ -67,9 +67,15 @@ Every release carries two extra assets next to the downloads:
 - `SHA256SUMS.txt` lists the SHA-256 of every other asset, including `RELEASE_NOTES.md` (it does not list itself or its signature);
 - `SHA256SUMS.txt.sig` is the raw 64-byte Ed25519 signature over the exact bytes of `SHA256SUMS.txt`.
 
-The in-app updater trusts only that signature. It fetches `SHA256SUMS.txt`, its `.sig` and `RELEASE_NOTES.md` from
-`releases/latest/download/`, checks the signature against the public keys compiled into the app (`TRUSTED_KEYS`), then checks the
-hash of everything else it uses. `RELEASE_NOTES.md` is the file used as the release body, so the app shows what the release page
+The in-app updater trusts only that signature. It fetches `SHA256SUMS.txt` and its `.sig` from `releases/latest/download/`, checks
+the signature against the public keys compiled into the app (`TRUSTED_KEYS`), then fetches `RELEASE_NOTES.md` and, when the user
+agrees, the installer from `releases/download/v<version>/` (so the tag must be `v` plus the version in the file names) and checks the
+hash of each.
+
+The list has a strict format, checked by the app and by `scripts/verify-release.sh` alike: `<64 lowercase hex>`, two spaces, a name of
+`A-Za-z0-9._-`, LF line ends, no name twice; the versions in the `Codeyard-<x.y.z>-…` names are one version; an installer (the `.dmg`
+or the setup `.exe`) and `RELEASE_NOTES.md` are listed. A release that is published by hand (a Windows-only release, say) is fine as
+long as its list follows these rules and is signed with `scripts/sign-release.sh`. `RELEASE_NOTES.md` is the file used as the release body, so the app shows what the release page
 shows.
 
 The public key is in the repo and the app: `scripts/update-public-key.pem`, raw 32 bytes in hex
@@ -91,8 +97,9 @@ failure comes in a minute and not after the builds. OpenSSL 3 is required (`pkey
 It checks the signature with `scripts/update-public-key.pem` (`--key <pem>` trusts another key; the tests use it), then every hash,
 and fails if the folder holds a file that `SHA256SUMS.txt` does not list. `scripts/verify-release.sh --self-test` runs in CI on every
 push: it signs a made-up release with a throw-away key and checks that a good release passes and that a changed asset, a changed
-`SHA256SUMS.txt`, another key's signature, a missing or truncated `.sig`, a missing or unlisted asset and a path outside the folder
-all fail. By hand, without the script:
+`SHA256SUMS.txt`, another key's signature, a missing or truncated `.sig`, a missing or unlisted asset, a path outside the folder, a
+list with mixed versions, a `*` marker, one or three spaces, upper-case hex, CRLF, a duplicate, a name with a space, no installer or
+no release notes all fail. By hand, without the script:
 `openssl pkeyutl -verify -pubin -inkey scripts/update-public-key.pem -rawin -in SHA256SUMS.txt -sigfile SHA256SUMS.txt.sig`.
 
 ### Where the key lives, and the backup

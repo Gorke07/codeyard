@@ -874,6 +874,8 @@ impl Workbench {
                     }
                 }
             }),
+            // The first-run update question waits for a quiet keyboard (a letter typed a moment ago must not answer it).
+            cx.observe_keystrokes(|this, _, _, _| this.update.last_key = Some(this.update.backend.now())),
             cx.observe_window_appearance(window, |this, window, cx| {
                 if this.theme_choice == THEME_AUTO {
                     let choice = this.theme_choice.clone();

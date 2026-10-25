@@ -39,6 +39,8 @@ impl Fixture {
     fn cfg(&self) -> Config {
         Config {
             base: format!("file://{}", self.dir.display()),
+            pin: None,
+            curl: system_tool("curl"),
             keys: vec![self.key.public_key().as_ref().try_into().unwrap()],
             suffix: Some(DMG),
             local: true,
@@ -190,6 +192,11 @@ fn update_signed_but_malformed_sums_are_rejected_by_the_parser() {
         (format!("{h} Codeyard-0.2.0-macos-arm64.dmg\n"), "one space"),
         (format!("{}  Codeyard-0.2.0-macos-arm64.dmg\n", "z".repeat(64)), "not hex"),
         (format!("{h}  a/b\n"), "path separator"),
+        (format!("{}  Codeyard-0.2.0-macos-arm64.dmg\n", "A".repeat(64)), "upper-case hex: the signing scripts write lower case"),
+        (format!("{h}  Codeyard-0.2.0-macos-arm64.dmg\r\n"), "CRLF"),
+        (format!("{h} *Codeyard-0.2.0-macos-arm64.dmg\n"), "binary-mode marker"),
+        (format!("{h}  Codeyard 0.2.0-macos-arm64.dmg\n"), "space in a name"),
+        (format!("{h}   Codeyard-0.2.0-macos-arm64.dmg\n"), "three spaces"),
         (format!("{h}  x\n{h}  x\n"), "duplicate"),
         (format!("{h}  Codeyard-0.2.0-macos-arm64.dmg\n").replace("0.2.0", "0.2.0\u{7}"), "control character"),
         (format!("{h}  something-else.txt\n"), "no release files"),
@@ -208,7 +215,8 @@ fn update_malformed_versions_are_rejected() {
     for v in ["1.2", "1.2.x", "1.2.3-rc1", "01.2.3", "1.2.3.4", "1.2.-3", "+1.2.3", "1..3", "", "99999999999.0.0"] {
         f.publish_files(&[(format!("Codeyard-{v}-{DMG}"), b"x"), ("RELEASE_NOTES.md".into(), b"n")]);
         let e = err(check(&f, "0.1.0"));
-        assert!(matches!(e, UpdateError::BadVersion(_)), "{v:?}: {e}");
+        // "+1.2.3" never gets as far as the version: `+` is not a character of a file name.
+        assert!(matches!(e, UpdateError::BadVersion(_) | UpdateError::BadSums(_)), "{v:?}: {e}");
     }
     f.publish_files(&[(format!("Codeyard-0.2.0-{DMG}"), b"x"), ("Codeyard-0.3.0-windows-x64.zip".into(), b"y")]);
     assert!(matches!(err(check(&f, "0.1.0")), UpdateError::BadVersion(_)), "assets of two versions in one release");
@@ -264,17 +272,40 @@ fn update_notes_must_be_utf8_and_listed() {
 }
 
 #[test]
-fn update_missing_platform_installer_in_signed_list_is_an_error_and_no_platform_installer_is_none() {
+fn update_a_release_without_an_installer_for_this_system_is_an_update_without_asset() {
     let f = Fixture::new("noasset");
-    f.publish_files(&[("Codeyard-0.2.0-windows-x64.zip".into(), b"z"), ("RELEASE_NOTES.md".into(), b"n")]);
-    let e = err(check(&f, "0.1.0"));
-    assert!(matches!(&e, UpdateError::MissingEntry(n) if n == "Codeyard-0.2.0-macos-arm64.dmg"), "{e}");
-    let mut cfg = f.cfg();
-    cfg.suffix = None; // Linux
-    let release = check_with(&cfg, "0.1.0").unwrap().unwrap();
-    assert_eq!(release.asset, None);
-    let e = err(download_in(&cfg, &f.dir.join("dl"), "0.1.0", &release, &mut |_| {}, &AtomicBool::new(false)));
+    // A Windows-only release read by a Mac: still a release, the UI points to its page.
+    f.publish_files(&[
+        ("Codeyard-0.2.0-windows-x64-setup.exe".into(), b"e"),
+        ("Codeyard-0.2.0-windows-x64.zip".into(), b"z"),
+        ("RELEASE_NOTES.md".into(), b"n"),
+    ]);
+    let release = check(&f, "0.1.0").unwrap().expect("the release is offered");
+    assert_eq!((release.version.as_str(), release.asset.clone(), release.notes.as_str()), ("0.2.0", None, "n"));
+    let e = err(download_in(&f.cfg(), &f.dir.join("dl"), "0.1.0", &release, &mut |_| {}, &AtomicBool::new(false)));
     assert!(matches!(e, UpdateError::NoInstaller));
+    // The same list on a system that has none at all (Linux).
+    let mut cfg = f.cfg();
+    cfg.suffix = None;
+    assert_eq!(check_with(&cfg, "0.1.0").unwrap().unwrap().asset, None);
+    // A Mac-only release read by Windows.
+    f.publish_files(&[("Codeyard-0.2.0-macos-arm64.dmg".into(), b"d"), ("RELEASE_NOTES.md".into(), b"n")]);
+    cfg.suffix = Some("windows-x64-setup.exe");
+    assert_eq!(check_with(&cfg, "0.1.0").unwrap().unwrap().asset, None);
+}
+
+#[test]
+fn update_a_signed_list_with_no_installer_of_any_platform_is_suspicious() {
+    let f = Fixture::new("noinstaller");
+    // Archives and notes only: not something our release workflow makes.
+    f.publish_files(&[("Codeyard-0.2.0-windows-x64.zip".into(), b"z"), ("codeyard-0.2.0-macos-arm64.tar.gz".into(), b"t"), ("RELEASE_NOTES.md".into(), b"n")]);
+    let e = err(check(&f, "0.1.0"));
+    assert!(matches!(&e, UpdateError::MissingEntry(n) if n.contains("an installer")), "{e}");
+    assert_eq!(e.kind(), ErrorKind::Untrusted);
+    // The notes must be in the signed list in any case.
+    f.publish_files(&[(format!("Codeyard-0.2.0-{DMG}"), b"d")]);
+    f.put("RELEASE_NOTES.md", b"unsigned");
+    assert!(matches!(err(check(&f, "0.1.0")), UpdateError::MissingEntry(n) if n == "RELEASE_NOTES.md"));
 }
 
 #[test]
@@ -377,6 +408,11 @@ fn update_errors_read_in_plain_english_and_carry_a_kind() {
     let io = || io::Error::other("disk full");
     let cases = [
         (Network("timed out".into()), ErrorKind::Network),
+        (Http { file: "a".into(), status: 503 }, ErrorKind::Network),
+        (Tls("certificate has expired".into()), ErrorKind::Network),
+        (NoRelease, ErrorKind::NoRelease),
+        (Unsigned, ErrorKind::Untrusted),
+        (NoSpace, ErrorKind::Install),
         (BadSignature, ErrorKind::Untrusted),
         (HashMismatch("a.dmg".into()), ErrorKind::Untrusted),
         (TooLarge { file: "a.dmg".into(), limit: 400 << 20 }, ErrorKind::Untrusted),
@@ -422,4 +458,294 @@ fn the_embedded_key_is_the_one_the_release_scripts_verify_with() {
     assert_eq!(der.len(), 44, "unexpected key encoding");
     assert_eq!(der[..12], [0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00]);
     assert_eq!(TRUSTED_KEYS[0], der[12..], "scripts/update-public-key.pem and TRUSTED_KEYS differ");
+}
+
+// --- Against a local HTTP server and a scripted curl ---
+
+use std::collections::HashMap;
+use std::io::Write as _;
+use std::net::TcpListener;
+use std::sync::{Arc, Mutex};
+
+/// Answers GET requests from a table of `path -> (status, body)` (anything else is 404) and writes down every path asked for.
+struct Server {
+    base: String,
+    asked: Arc<Mutex<Vec<String>>>,
+    stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Server {
+    fn start(routes: HashMap<String, (u16, Vec<u8>)>) -> Server {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let (asked, stop) = (Arc::new(Mutex::new(Vec::new())), Arc::new(AtomicBool::new(false)));
+        let (log, halt) = (asked.clone(), stop.clone());
+        let thread = std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                if halt.load(Ordering::SeqCst) {
+                    return;
+                }
+                let Ok(mut stream) = stream else { continue };
+                let mut head = [0u8; 2048];
+                let n = io::Read::read(&mut stream, &mut head).unwrap_or(0);
+                let request = String::from_utf8_lossy(&head[..n]).into_owned();
+                let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
+                log.lock().unwrap().push(path.clone());
+                let (status, body) = routes.get(&path).cloned().unwrap_or((404, b"not found".to_vec()));
+                let _ = write!(stream, "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                let _ = stream.write_all(&body);
+            }
+        });
+        Server { base, asked, stop, thread: Some(thread) }
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.lock().unwrap().clone()
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        // Wakes the accept loop so that it can see the flag.
+        let _ = std::net::TcpStream::connect(self.base.trim_start_matches("http://"));
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+/// A signed release as routes: the list and signature under `latest/`, every other file under `<pin>/v<version>/`.
+fn routes_for(f: &Fixture, version: &str, files: &[(&str, &[u8])]) -> HashMap<String, (u16, Vec<u8>)> {
+    let mut routes = HashMap::new();
+    let mut sums = String::new();
+    for (name, data) in files {
+        sums += &format!("{}  {name}\n", sha256_hex(data));
+        routes.insert(format!("/dl/v{version}/{name}"), (200, data.to_vec()));
+    }
+    routes.insert("/latest/SHA256SUMS.txt".into(), (200, sums.clone().into_bytes()));
+    routes.insert("/latest/SHA256SUMS.txt.sig".into(), (200, f.key.sign(sums.as_bytes()).as_ref().to_vec()));
+    routes
+}
+
+fn served(f: &Fixture, server: &Server) -> Config {
+    let mut cfg = f.cfg();
+    cfg.base = format!("{}/latest", server.base);
+    cfg.pin = Some(format!("{}/dl", server.base));
+    cfg
+}
+
+#[test]
+fn update_notes_and_installer_come_from_the_tag_of_the_verified_list() {
+    let f = Fixture::new("pinned");
+    let files: [(&str, &[u8]); 2] = [("Codeyard-0.2.0-macos-arm64.dmg", b"installer"), ("RELEASE_NOTES.md", b"notes")];
+    let server = Server::start(routes_for(&f, "0.2.0", &files));
+    let cfg = served(&f, &server);
+    let release = check_with(&cfg, "0.1.0").unwrap().expect("an update");
+    // `latest` has no notes and no installer: they exist only under the tag, so a check that asked `latest` for them would fail.
+    assert_eq!(release.notes, "notes");
+    let asset = release.asset.clone().unwrap();
+    assert_eq!(asset.url, format!("{}/dl/v0.2.0/Codeyard-0.2.0-macos-arm64.dmg", server.base));
+    let dl = download_in(&cfg, &f.dir.join("dl"), "0.1.0", &release, &mut |_| {}, &AtomicBool::new(false)).unwrap();
+    assert_eq!(std::fs::read(dl.path()).unwrap(), b"installer");
+    assert_eq!(
+        server.asked(),
+        ["/latest/SHA256SUMS.txt", "/latest/SHA256SUMS.txt.sig", "/dl/v0.2.0/RELEASE_NOTES.md", "/dl/v0.2.0/Codeyard-0.2.0-macos-arm64.dmg"]
+    );
+}
+
+#[test]
+fn update_the_real_configuration_pins_to_the_tag_and_a_local_one_does_not() {
+    let cfg = Config::new(None);
+    let v = Version::parse("0.2.0").unwrap();
+    assert_eq!(cfg.release_url(v, "RELEASE_NOTES.md"), "https://github.com/doancan/codeyard/releases/download/v0.2.0/RELEASE_NOTES.md");
+    assert_eq!(cfg.url("SHA256SUMS.txt"), "https://github.com/doancan/codeyard/releases/latest/download/SHA256SUMS.txt");
+    let local = Config::new(Some("http://127.0.0.1:1/x".into()));
+    assert_eq!(local.release_url(v, "RELEASE_NOTES.md"), "http://127.0.0.1:1/x/RELEASE_NOTES.md", "a mirror serves one flat folder");
+}
+
+#[test]
+fn update_a_release_without_a_signature_is_unsigned_not_a_network_problem() {
+    let f = Fixture::new("unsigned");
+    let mut routes = routes_for(&f, "0.2.0", &[("Codeyard-0.2.0-macos-arm64.dmg", b"i"), ("RELEASE_NOTES.md", b"n")]);
+    routes.remove("/latest/SHA256SUMS.txt.sig"); // what v0.1.0 looks like on GitHub today
+    let server = Server::start(routes);
+    let e = err(check_with(&served(&f, &server), "0.1.0"));
+    assert!(matches!(e, UpdateError::Unsigned), "{e}");
+    assert_eq!(e.kind(), ErrorKind::Untrusted);
+    assert!(e.to_string().contains("isn't signed"), "{e}");
+    // 410 Gone says the same; a server error does not: that one is worth another try.
+    let mut gone = routes_for(&f, "0.2.0", &[("Codeyard-0.2.0-macos-arm64.dmg", b"i"), ("RELEASE_NOTES.md", b"n")]);
+    gone.insert("/latest/SHA256SUMS.txt.sig".into(), (410, vec![]));
+    assert!(matches!(err(check_with(&served(&f, &Server::start(gone)), "0.1.0")), UpdateError::Unsigned));
+    let mut broken = routes_for(&f, "0.2.0", &[("Codeyard-0.2.0-macos-arm64.dmg", b"i"), ("RELEASE_NOTES.md", b"n")]);
+    broken.insert("/latest/SHA256SUMS.txt.sig".into(), (503, vec![]));
+    let e = err(check_with(&served(&f, &Server::start(broken)), "0.1.0"));
+    assert!(matches!(&e, UpdateError::Http { status: 503, .. }), "{e}");
+    assert_eq!(e.kind(), ErrorKind::Network);
+}
+
+#[test]
+fn update_a_repository_without_a_checksum_list_has_no_release_to_look_at() {
+    let f = Fixture::new("norelease");
+    let server = Server::start(HashMap::new());
+    let e = err(check_with(&served(&f, &server), "0.1.0"));
+    assert!(matches!(e, UpdateError::NoRelease), "{e}");
+    assert_eq!(e.kind(), ErrorKind::NoRelease);
+}
+
+#[test]
+fn update_a_server_error_for_the_list_is_a_network_error() {
+    let f = Fixture::new("http500");
+    let server = Server::start(HashMap::from([("/latest/SHA256SUMS.txt".to_string(), (500, vec![]))]));
+    let e = err(check_with(&served(&f, &server), "0.1.0"));
+    assert!(matches!(&e, UpdateError::Http { file, status: 500 } if file == "SHA256SUMS.txt"), "{e}");
+    assert_eq!(e.kind(), ErrorKind::Network);
+}
+
+#[test]
+fn update_the_signature_limit_is_named_in_bytes_not_megabytes() {
+    let f = Fixture::new("siglimit");
+    f.publish("0.2.0", b"x");
+    f.put("SHA256SUMS.txt.sig", &[0; 65]);
+    let e = err(check(&f, "0.1.0"));
+    assert!(matches!(&e, UpdateError::TooLarge { limit: 64, .. }), "{e}");
+    assert!(e.to_string().contains("64 bytes") && !e.to_string().contains("MB"), "{e}");
+    assert!(UpdateError::TooLarge { file: "a".into(), limit: 64 << 10 }.to_string().contains("64 KB"));
+    assert!(UpdateError::TooLarge { file: "a".into(), limit: 400 << 20 }.to_string().contains("400 MB"));
+}
+
+/// A `curl` that says `stderr`, exits with `code` and writes its arguments to `<dir>/args`.
+#[cfg(unix)]
+fn fake_curl(dir: &Path, code: i32, stderr: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(format!("fake-curl-{code}"));
+    let script = format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}/args'\nprintf '%s' '{stderr}' >&2\nexit {code}\n", dir.display());
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn update_curl_failures_are_sorted_by_what_the_user_can_do_about_them() {
+    let f = Fixture::new("curl-codes");
+    let message = |status: u16| format!("curl: (22) The requested URL returned error: {status}");
+    #[derive(Debug, PartialEq)]
+    enum Want {
+        Network,
+        Tls,
+        NoSpace,
+        Http(u16),
+    }
+    let table = [
+        (6, "curl: (6) Could not resolve host: github.com".to_string(), Want::Network),
+        (7, "curl: (7) Failed to connect to github.com port 443".into(), Want::Network),
+        (28, "curl: (28) Operation timed out".into(), Want::Network),
+        (1, "curl: (1) Protocol \"http\" disabled".into(), Want::Network),
+        (22, message(503), Want::Http(503)),
+        // curl 8 on macOS reports an HTTP error over HTTP/2 as 56; the message still says which one.
+        (56, message(404), Want::Http(404)),
+        (56, "curl: (56) Recv failure: Connection reset by peer".into(), Want::Network),
+        (23, "curl: (23) Failure writing output to destination".into(), Want::NoSpace),
+        (35, "curl: (35) TLS connect error".into(), Want::Tls),
+        (51, "curl: (51) SSL: no alternative certificate subject name matches".into(), Want::Tls),
+        (60, "curl: (60) SSL certificate problem: certificate has expired".into(), Want::Tls),
+        (58, "curl: (58) could not load PEM client certificate".into(), Want::Tls),
+        (77, "curl: (77) error setting certificate file".into(), Want::Tls),
+    ];
+    for (code, stderr, want) in table {
+        let mut cfg = f.cfg();
+        cfg.curl = fake_curl(&f.dir, code, &stderr);
+        let e = err(fetch(&cfg, "http://x/SHA256SUMS.txt", "SHA256SUMS.txt", 100));
+        let got = match &e {
+            UpdateError::Network(_) => Want::Network,
+            UpdateError::Tls(_) => Want::Tls,
+            UpdateError::NoSpace => Want::NoSpace,
+            UpdateError::Http { status, .. } => Want::Http(*status),
+            other => panic!("{code}: {other:?}"),
+        };
+        assert_eq!(got, want, "exit {code}: {stderr}");
+        let kind = if want == Want::NoSpace { ErrorKind::Install } else { ErrorKind::Network };
+        assert_eq!(e.kind(), kind, "exit {code}");
+    }
+    // Nothing on stderr: the exit status still says something.
+    let mut cfg = f.cfg();
+    cfg.curl = fake_curl(&f.dir, 7, "");
+    assert!(matches!(err(fetch(&cfg, "http://x/y", "y", 100)), UpdateError::Network(m) if m.contains("status 7")));
+    assert_eq!(err(fetch(&cfg, "http://x/y", "y", 100)).to_string(), "Could not reach the update server: curl exited with status 7");
+}
+
+#[cfg(unix)]
+#[test]
+fn update_the_download_maps_a_full_disk_and_a_too_large_file() {
+    let f = Fixture::new("download-codes");
+    f.publish("0.2.0", b"x");
+    let release = check(&f, "0.1.0").unwrap().unwrap();
+    for (code, stderr) in [(23, "curl: (23) Failure writing output to destination"), (63, "curl: (63) Maximum file size exceeded")] {
+        let mut cfg = f.cfg();
+        cfg.curl = fake_curl(&f.dir, code, stderr);
+        let e = err(download_in(&cfg, &f.dir.join("dl"), "0.1.0", &release, &mut |_| {}, &AtomicBool::new(false)));
+        match code {
+            23 => assert!(matches!(e, UpdateError::NoSpace), "{e}"),
+            _ => assert!(matches!(e, UpdateError::TooLarge { .. }), "{e}"),
+        }
+        assert!(!f.dir.join("dl").exists(), "nothing is left behind");
+    }
+    assert_eq!(UpdateError::NoSpace.kind(), ErrorKind::Install);
+    assert_eq!(UpdateError::NoSpace.to_string(), "There is not enough disk space to download the update.");
+}
+
+#[cfg(unix)]
+#[test]
+fn update_curl_gets_stall_detection_and_the_small_files_a_shorter_one() {
+    let f = Fixture::new("speed");
+    let args = |f: &Fixture| -> Vec<String> { String::from_utf8(f.read("args")).unwrap().lines().map(str::to_string).collect() };
+    let pair = |a: &[String], k: &str, v: &str| a.windows(2).any(|w| w[0] == k && w[1] == v);
+    let mut cfg = f.cfg();
+    cfg.curl = fake_curl(&f.dir, 0, "");
+    fetch(&cfg, "http://x/SHA256SUMS.txt", "SHA256SUMS.txt", 100).unwrap();
+    let small = args(&f);
+    assert!(pair(&small, "--speed-limit", "1024") && pair(&small, "--speed-time", "30") && pair(&small, "--max-time", "30"), "{small:?}");
+    f.publish("0.2.0", b"x");
+    let release = check(&f, "0.1.0").unwrap().unwrap();
+    // This one ends in a hash mismatch (curl wrote nothing); only the arguments matter.
+    let _ = download_in(&cfg, &f.dir.join("dl"), "0.1.0", &release, &mut |_| {}, &AtomicBool::new(false));
+    let big = args(&f);
+    assert!(pair(&big, "--speed-limit", "1024") && pair(&big, "--speed-time", "60") && pair(&big, "--max-time", "1800"), "{big:?}");
+}
+
+#[test]
+fn update_failed_checks_are_retried_at_most_three_times_a_day() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100 * 86_400);
+    let ago = |hours: u64| now - Duration::from_secs(hours * 3600);
+    assert!(retry_allowed(&[], now));
+    assert!(retry_allowed(&[ago(1), ago(4)], now), "two failures: one more try");
+    assert!(!retry_allowed(&[ago(1), ago(4), ago(7)], now), "three today: wait");
+    assert!(retry_allowed(&[ago(1), ago(4), ago(25)], now), "a failure from yesterday does not count");
+    assert!(!retry_allowed(&[ago(1), ago(4), now + Duration::from_secs(60)], now), "a clock that went back counts as recent");
+}
+
+#[test]
+fn update_an_older_list_than_one_seen_before_is_a_replay() {
+    assert!(is_rollback("0.2.0", "0.4.0"));
+    assert!(is_rollback("0.9.0", "0.10.0"), "numerically, not as text");
+    assert!(!is_rollback("0.4.0", "0.4.0") && !is_rollback("0.5.0", "0.4.0"));
+    assert!(!is_rollback("junk", "0.4.0") && !is_rollback("0.2.0", "junk"), "what does not parse is not judged here");
+    assert_eq!(higher_version("0.5.0", Some("0.4.0")), "0.5.0");
+    assert_eq!(higher_version("0.2.0", Some("0.4.0")), "0.4.0");
+    assert_eq!(higher_version("0.2.0", None), "0.2.0");
+    assert_eq!(higher_version("0.2.0", Some("junk")), "0.2.0");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn update_helper_programs_are_run_by_absolute_path_on_macos() {
+    for tool in ["curl", "hdiutil", "ditto", "plutil", "codesign"] {
+        let path = system_tool(tool);
+        assert_eq!(path, Path::new("/usr/bin").join(tool));
+        assert!(path.is_file(), "{}", path.display());
+    }
+    assert_eq!(Config::new(None).curl, Path::new("/usr/bin/curl"));
 }

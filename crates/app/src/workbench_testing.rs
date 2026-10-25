@@ -562,6 +562,21 @@ impl Workbench {
         model.buttons.get(ix).map(|b| b.label.to_string())
     }
 
+    /// How many blocks the notes are drawn as, and the text of the last one.
+    pub fn update_notes_for_test(&self) -> (usize, String) {
+        let last = self.update.notes.last().map(|b| crate::markdown::plain_text(std::slice::from_ref(b))).unwrap_or_default();
+        (self.update.notes.len(), last)
+    }
+
+    pub fn notes_focused_for_test(&self, window: &Window) -> bool {
+        self.update.notes_focus.is_focused(window)
+    }
+
+    /// How far the release notes are scrolled (0 at the top, negative below it) and how far they can be.
+    pub fn notes_scroll_for_test(&self) -> (f32, f32) {
+        (f32::from(self.update.notes_scroll.offset().y), f32::from(self.update.notes_scroll.max_offset().height))
+    }
+
     pub fn open_palette_for_test(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_palette("", window, cx);
     }

@@ -3,11 +3,14 @@
 //! `workbench_view_update.rs`; the network and the installer sit behind `UpdateBackend` so tests can script them.
 //!
 //! The rules, in one place:
-//! - `update.check` = `ask` and `manual` never contact the network by themselves; only `daily` does, once in 24 hours.
+//! - `update.check` = `ask` and `manual` never contact the network by themselves; only `daily` does: one successful check in
+//!   24 hours, and after failed ones (offline) a retry every few hours, at most three failures a day.
 //! - A check the user asked for shows its errors; a background check logs them to stderr and stays quiet.
 //! - A background check that finds a release shows one notice per version and a status bar item, never a dialog.
 //! - Skipping a version silences those two for it; a manual check still offers it.
-//! - Quitting during a download cancels it and removes its files; quitting during the swap asks first.
+//! - A list that offers a version lower than the highest ever offered here is a replay: logged, not offered.
+//! - Quitting during a download cancels it and removes its files; quitting (or closing a window) while ANY window is swapping
+//!   the app in asks first or waits, so the result of the swap always has a window to land in.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -17,9 +20,9 @@ use futures::StreamExt as _;
 use super::*;
 use crate::i18n::{t, tf};
 use crate::markdown;
-use crate::update::{ErrorKind, Policy, Progress, Release, UpdateError, should_check_now};
+use crate::update::{ErrorKind, Policy, Progress, Release, UpdateError, higher_version, is_rollback, retry_allowed, should_check_now};
 pub(crate) use crate::update_backend::UpdateBackend;
-use crate::update_install::{InstallKind, InstallPlan};
+use crate::update_install::{InstallKind, InstallPlan, ManualReason};
 
 /// Keys in the state database (machine-written values stay out of `settings.jsonc`).
 const LAST_CHECK: &str = "update.last_check";
@@ -27,6 +30,8 @@ const SKIPPED: &str = "update.skipped";
 const INSTALLED: &str = "update.installed";
 const NOTIFIED: &str = "update.notified";
 const ASK_SNOOZED_UNTIL: &str = "update.ask_snoozed_until";
+/// The highest version a verified list has offered here; a lower one later is a replayed old list.
+const HIGHEST_SEEN: &str = "update.highest_seen";
 
 /// The first-run question comes a few seconds after the window is up, and waits for a calm moment (no picker, menu or dialog open).
 const ASK_AFTER: Duration = Duration::from_secs(5);
@@ -34,7 +39,14 @@ const ASK_RETRY: Duration = Duration::from_secs(3);
 const ASK_ATTEMPTS: u32 = 40;
 /// A daily check starts this long after the question, so it never competes with the window opening.
 const CHECK_AFTER_ASK: Duration = Duration::from_secs(10);
-/// A session that runs for days looks again every few hours; `should_check_now` keeps it to once in 24.
+/// The question does not appear while keys are being pressed: a letter typed a moment ago would answer it.
+const QUIET_BEFORE_ASK: Duration = Duration::from_secs(3);
+/// Release notes are drawn up to this many bytes (a note of 256 KiB makes tens of thousands of blocks); the rest is on GitHub.
+const NOTES_RENDER_MAX: usize = 64 << 10;
+/// What a screen reader is given of them.
+const NOTES_SPEECH_MAX: usize = 8 << 10;
+/// A session that runs for days looks again every few hours; `should_check_now` keeps it to once in 24 and `retry_allowed`
+/// to three failures a day.
 const CHECK_EVERY: Duration = Duration::from_secs(3 * 60 * 60);
 /// Closing the question with Esc is not an answer: it comes back after this long, not at every start.
 const ASK_SNOOZE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
@@ -80,11 +92,41 @@ pub(super) enum Phase {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Failure {
     pub(super) kind: ErrorKind,
+    /// What the plain-language lead should say beyond the kind.
+    pub(super) cause: Cause,
     /// The error's own English text: technical, shown under the plain-language lead.
     pub(super) detail: String,
     /// The release that was being downloaded or installed (`Retry` downloads it again).
     pub(super) release: Option<Release>,
     pub(super) phase: Phase,
+}
+
+/// The few errors whose advice differs from the rest of their kind.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum Cause {
+    Other,
+    /// The secure connection failed: a wrong clock, a proxy or security software are the usual reasons.
+    Tls,
+    /// The release has no signature.
+    Unsigned,
+    DiskFull,
+    /// The swap failed and the previous version could not be put back.
+    RollbackFailed {
+        app: std::path::PathBuf,
+        backup: std::path::PathBuf,
+    },
+}
+
+impl Cause {
+    fn of(e: &UpdateError) -> Self {
+        match e {
+            UpdateError::Tls(_) => Cause::Tls,
+            UpdateError::Unsigned => Cause::Unsigned,
+            UpdateError::NoSpace => Cause::DiskFull,
+            UpdateError::RollbackFailed { app, backup, .. } => Cause::RollbackFailed { app: app.clone(), backup: backup.clone() },
+            _ => Cause::Other,
+        }
+    }
 }
 
 /// What is on screen. The question is separate from the update dialog because it is shown without any update in sight.
@@ -153,8 +195,11 @@ pub(super) enum Tone {
 pub(super) enum Body {
     None,
     Paragraphs(Vec<SharedString>),
-    /// Release notes, with an optional line above them.
-    Notes(Option<SharedString>),
+    /// Release notes, with an optional line above them. `text` is the notes as plain text, for the accessibility tree.
+    Notes {
+        note: Option<SharedString>,
+        text: SharedString,
+    },
     /// `fraction`: how far along (`None`: not known yet).
     Progress {
         fraction: Option<f32>,
@@ -196,8 +241,8 @@ impl DialogModel {
         let mut parts: Vec<String> = vec![self.title.to_string()];
         parts.extend(self.subtitle.iter().map(|s| s.to_string()));
         match &self.body {
-            Body::None | Body::Notes(None) => {}
-            Body::Notes(Some(note)) => parts.push(note.to_string()),
+            Body::None => {}
+            Body::Notes { note, text } => parts.extend(note.iter().chain((!text.is_empty()).then_some(text)).map(|t| t.to_string())),
             Body::Paragraphs(lines) => parts.extend(lines.iter().map(|l| l.to_string())),
             Body::Progress { caption, .. } => parts.push(caption.to_string()),
             Body::Working(text) => parts.push(text.to_string()),
@@ -241,7 +286,7 @@ pub(super) fn release_url(version: Option<&str>) -> String {
 impl Failure {
     pub(super) fn title(&self) -> String {
         match (self.kind, self.phase) {
-            (ErrorKind::Network, Phase::Check) => t("Couldn't check for updates"),
+            (ErrorKind::Network, Phase::Check) | (ErrorKind::NoRelease, _) => t("Couldn't check for updates"),
             (ErrorKind::Network, _) => t("Couldn't download the update"),
             (ErrorKind::Untrusted, _) => t("The update couldn't be verified"),
             _ => t("The update couldn't be installed"),
@@ -250,17 +295,49 @@ impl Failure {
     }
 
     fn lead(&self) -> String {
-        match self.kind {
-            ErrorKind::Network => t("Codeyard couldn't reach the update server. Check your internet connection and try again."),
-            ErrorKind::Untrusted => t("Nothing was installed. What the update server sent didn't match the signed checksums, so Codeyard discarded it."),
+        match (&self.cause, self.kind) {
+            (Cause::Unsigned, _) => t("Nothing was installed. This release isn't signed, so Codeyard can't verify it."),
+            (Cause::Tls, _) => t("Codeyard couldn't set up a secure connection to the update server. Check that your date and time are right and that no proxy or security software is blocking it, then try again."),
+            (Cause::DiskFull, _) => t("There isn't enough free disk space for the download. Free some space and try again."),
+            (Cause::RollbackFailed { app, backup }, _) => {
+                return tf(
+                    "The update failed part-way and Codeyard couldn't put the previous version back. It may be at {0}. If Codeyard doesn't start, move it back to {1}.",
+                    &[&backup.display(), &app.display()],
+                );
+            }
+            (Cause::Other, ErrorKind::Network) => t("Codeyard couldn't reach the update server. Check your internet connection and try again."),
+            (Cause::Other, ErrorKind::NoRelease) => t("GitHub has no release with a checksum list yet, so there is nothing to compare this version with. You can look at the release page."),
+            (Cause::Other, ErrorKind::Untrusted) => t("Nothing was installed. What the update server sent didn't match the signed checksums, so Codeyard discarded it."),
             _ => t("The new version couldn't be installed from here. You can download it from the release page instead."),
         }
         .to_string()
     }
 
-    fn from_error(e: &UpdateError, release: Option<Release>, phase: Phase) -> Self {
-        Failure { kind: e.kind(), detail: e.to_string(), release, phase }
+    /// "Try Again" makes sense: the trouble can go away by itself or by the user's doing.
+    fn can_retry(&self) -> bool {
+        self.kind == ErrorKind::Network || self.cause == Cause::DiskFull
     }
+
+    fn from_error(e: &UpdateError, release: Option<Release>, phase: Phase) -> Self {
+        Failure { kind: e.kind(), cause: Cause::of(e), detail: e.to_string(), release, phase }
+    }
+}
+
+/// Why this copy cannot replace itself, in the words of the dialog.
+fn manual_note(reason: &ManualReason) -> String {
+    match reason {
+        ManualReason::DevelopmentBuild => t("This is a development build and can't update itself. Download the new version yourself."),
+        ManualReason::NotInstalled => t("This copy isn't installed as an app, so download the new version yourself."),
+        ManualReason::ReadOnlyFolder(dir) => {
+            return tf(
+                "Codeyard can't replace itself in {}: your account can't write there. Download the new version and drag it in yourself.",
+                &[&dir.display()],
+            );
+        }
+        ManualReason::Portable => t("This is the portable version, which can't update itself. Download the new version and replace it yourself."),
+        ManualReason::OtherSystem => t("Codeyard can't update itself on this system. Download the new version yourself."),
+    }
+    .to_string()
 }
 
 impl UpdateState {
@@ -277,6 +354,53 @@ impl UpdateState {
             _ => None,
         }
     }
+}
+
+/// The notes as blocks to draw and as text to speak. Past `NOTES_RENDER_MAX` bytes (cut at a line) the rest is left to GitHub; the
+/// spoken text is shorter still and names the release page.
+fn render_notes(notes: &str, release_page: &str) -> (Vec<markdown::Block>, String) {
+    let longer = notes.len() > NOTES_RENDER_MAX;
+    let shown = if longer { cut_at_line(notes, NOTES_RENDER_MAX) } else { notes };
+    let mut blocks = markdown::parse(shown);
+    if longer {
+        blocks.push(markdown::Block::Paragraph(vec![markdown::Span {
+            text: t("The release notes are longer: read the rest on GitHub.").into(),
+            style: Default::default(),
+        }]));
+    }
+    let mut speech = markdown::plain_text(&blocks);
+    if speech.len() > NOTES_SPEECH_MAX {
+        speech.truncate(cut_at_line(&speech, NOTES_SPEECH_MAX).len());
+        speech.push('\n');
+        speech.push_str(&tf("The release notes are longer: read the rest at {}", &[&release_page]));
+    }
+    (blocks, speech)
+}
+
+/// The longest prefix of `text` of at most `max` bytes that ends at a line end (or, for one huge line, at a character).
+fn cut_at_line(text: &str, max: usize) -> &str {
+    let mut end = max.min(text.len());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &text[..end];
+    head.rfind('\n').map_or(head, |n| &head[..n])
+}
+
+/// Where the notes scroll to (vertical offset: 0 at the top, `-max` at the end) for a key; `None` for any other key.
+fn notes_scroll_target(key: &str, offset: f32, page: f32, max: f32) -> Option<f32> {
+    const LINE: f32 = 20.;
+    let target = match key {
+        "down" => offset - LINE,
+        "up" => offset + LINE,
+        // A page less one line, so the line at the edge stays in view.
+        "pagedown" => offset - (page - LINE).max(LINE),
+        "pageup" => offset + (page - LINE).max(LINE),
+        "home" => 0.,
+        "end" => -max,
+        _ => return None,
+    };
+    Some(target.clamp(-max.max(0.), 0.))
 }
 
 fn progress_fraction(p: &Progress) -> Option<f32> {
@@ -296,7 +420,7 @@ impl Workbench {
                 title: t("Check for updates automatically?").into(),
                 subtitle: None,
                 body: Body::Paragraphs(vec![
-                    t("Once a day, Codeyard can ask github.com for the checksum list of the latest release to see whether a newer version exists. That request is all that is sent: nothing about you or your files, no account and no tracking.").into(),
+                    t("Once a day, Codeyard can look for a newer version. It downloads two small files from github.com: the checksum list of the latest release and its signature. GitHub sees your IP address and that the request comes from curl; no account, no cookies, nothing about your files.").into(),
                     t("You can change this at any time in Settings (update.check). Check for Updates… always works, whatever you choose.").into(),
                 ]),
                 buttons: vec![button(A::OnlyWhenAsked, t("Only When I Ask"), false), button(A::CheckDaily, t("Check Daily"), true)],
@@ -322,9 +446,9 @@ impl Workbench {
                 escape: A::Close,
             }),
             (Dialog::Update, UpdateState::Available(release)) => {
-                let can_install = !matches!(self.update.kind, InstallKind::Manual) && release.asset.is_some();
+                let can_install = !matches!(self.update.kind, InstallKind::Manual(_)) && release.asset.is_some();
                 let note = match (&self.update.kind, release.asset.is_some()) {
-                    (InstallKind::Manual, _) => Some(t("This copy isn't installed as an app, so download the new version yourself.").into()),
+                    (InstallKind::Manual(reason), _) => Some(manual_note(reason).into()),
                     (_, false) => Some(t("This release has no installer for this system. Download it from the release page.").into()),
                     _ => None,
                 };
@@ -343,7 +467,7 @@ impl Workbench {
                     tone: Tone::Accent,
                     title: tf("Codeyard {} is available", &[&release.version]).into(),
                     subtitle: Some(tf("You have {}", &[&version]).into()),
-                    body: Body::Notes(note),
+                    body: Body::Notes { note, text: self.update.notes_text.clone().into() },
                     buttons,
                     escape: A::Close,
                 })
@@ -394,16 +518,13 @@ impl Workbench {
             }
             (Dialog::Update, UpdateState::Error(f)) => {
                 let mut buttons = Vec::new();
-                match f.kind {
-                    ErrorKind::Network => {
-                        buttons.push(start_button(A::ReleasePage, t("Release Page")));
-                        buttons.push(button(A::Close, t("Close"), false));
-                        buttons.push(button(A::Retry, t("Try Again"), true));
-                    }
-                    _ => {
-                        buttons.push(button(A::Close, t("Close"), false));
-                        buttons.push(button(A::ReleasePage, t("Release Page"), true));
-                    }
+                if f.can_retry() {
+                    buttons.push(start_button(A::ReleasePage, t("Release Page")));
+                    buttons.push(button(A::Close, t("Close"), false));
+                    buttons.push(button(A::Retry, t("Try Again"), true));
+                } else {
+                    buttons.push(button(A::Close, t("Close"), false));
+                    buttons.push(button(A::ReleasePage, t("Release Page"), true));
                 }
                 Some(DialogModel {
                     icon: "alert",
@@ -422,7 +543,9 @@ impl Workbench {
     pub(super) fn update_status_item(&self) -> Option<StatusItem> {
         let version = self.update.state.version()?.to_string();
         let (icon, tone, label, tip) = match &self.update.state {
-            UpdateState::Available(_) => ("arrow-down", Tone::Accent, version.clone(), tf("Codeyard {} is available. Click for details.", &[&version])),
+            UpdateState::Available(_) => {
+                ("arrow-down", Tone::Accent, tf("Update {}", &[&version]), tf("Codeyard {} is available. Click for details.", &[&version]))
+            }
             UpdateState::Downloading { progress, .. } => {
                 let label = match progress_fraction(progress) {
                     Some(f) => tf("Updating… {}%", &[&((f * 100.).floor() as u32)]),
@@ -507,11 +630,10 @@ impl Workbench {
             Dialog::Update => {}
         }
         self.update.dialog = Dialog::Closed;
-        // What was only worth showing in the dialog is dropped with it; a failed update keeps its status item.
-        match &self.update.state {
-            UpdateState::UpToDate => self.update.state = UpdateState::Idle,
-            UpdateState::Error(f) if f.release.is_none() => self.update.state = UpdateState::Idle,
-            _ => {}
+        // What was only worth showing in the dialog is dropped with it. So is an error the user has read: its status item goes
+        // away, and a background check is no longer held back by it (the next one finds the release again).
+        if matches!(self.update.state, UpdateState::UpToDate | UpdateState::Error(_)) {
+            self.update.state = UpdateState::Idle;
         }
         match self.update.return_focus.take() {
             Some(handle) => window.focus(&handle),
@@ -529,17 +651,31 @@ impl Workbench {
         }
     }
 
+    // --- Reading the notes with the keyboard ---
+
+    /// Scrolls the notes for a key pressed while they have the focus. `false`: not a scrolling key.
+    pub(super) fn scroll_notes(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let handle = &self.update.notes_scroll;
+        let (offset, page, max) = (f32::from(handle.offset().y), f32::from(handle.bounds().size.height), f32::from(handle.max_offset().height));
+        let Some(target) = notes_scroll_target(key, offset, page, max) else { return false };
+        handle.set_offset(gpui::point(handle.offset().x, px(target)));
+        cx.notify();
+        true
+    }
+
     // --- The question ---
 
     /// Shows the one-time question when `update.check` is undecided, it was not snoozed and nothing else is in the way (a picker or
-    /// menu is open, or the window is in the background: a dialog must not appear under someone else's hands). `false`: not now,
-    /// try again soon.
+    /// menu is open, the window is in the background or a key was pressed a moment ago: a dialog must not appear under someone
+    /// else's hands). `false`: not now, try again soon.
     pub(super) fn ask_update_policy(&mut self, window_active: bool, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let snoozed = self.stored(ASK_SNOOZED_UNTIL).and_then(|v| v.parse::<u64>().ok()).is_some_and(|until| unix_ms(self.update.backend.now()) < until);
         if cx.global::<Settings>().update_check != Policy::Ask || snoozed {
             return true;
         }
-        let calm = self.overlay.is_none() && self.menu.is_none() && self.update.dialog == Dialog::Closed && window_active;
+        let now = self.update.backend.now();
+        let typing = self.update.last_key.is_some_and(|t| now.duration_since(t).map_or(true, |age| age < QUIET_BEFORE_ASK));
+        let calm = self.overlay.is_none() && self.menu.is_none() && self.update.dialog == Dialog::Closed && window_active && !typing;
         if !calm {
             return false;
         }
@@ -598,10 +734,12 @@ impl Workbench {
         }));
     }
 
-    /// The background check of policy `daily`: only when 24 hours passed since the last good one.
+    /// The background check of policy `daily`: when 24 hours have passed since the last good one, and after failures only while
+    /// fewer than three happened today.
     pub(super) fn check_if_due(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let policy = cx.global::<Settings>().update_check;
-        if should_check_now(self.last_check(), self.update.backend.now(), policy) {
+        let now = self.update.backend.now();
+        if should_check_now(self.last_check(), now, policy) && retry_allowed(&self.update.failures, now) {
             self.begin_check(false, window, cx);
         }
     }
@@ -686,7 +824,15 @@ impl Workbench {
             }
             Ok(Some(release)) => {
                 self.record_check();
-                self.offer(release, manual, cx);
+                let seen = self.stored(HIGHEST_SEEN);
+                if seen.as_deref().is_some_and(|seen| is_rollback(&release.version, seen)) {
+                    // Genuinely signed, but older than what this installation was offered before: an old list played back.
+                    eprintln!("update: ignoring {}: an earlier check already saw {}", release.version, seen.unwrap_or_default());
+                    self.update.state = if manual { UpdateState::UpToDate } else { UpdateState::Idle };
+                } else {
+                    self.remember(HIGHEST_SEEN, &higher_version(&release.version, seen.as_deref()));
+                    self.offer(release, manual, cx);
+                }
             }
             Err(e) => self.fail(&e, None, Phase::Check, window, cx),
         }
@@ -709,7 +855,8 @@ impl Workbench {
             return;
         }
         self.update.kind = self.update.backend.install_kind();
-        self.update.notes = markdown::parse(&release.notes);
+        (self.update.notes, self.update.notes_text) = render_notes(&release.notes, &release_url(Some(version.as_str())));
+        self.update.notes_scroll.set_offset(gpui::point(px(0.), px(0.)));
         self.update.state = UpdateState::Available(release);
         if !manual && self.stored(NOTIFIED).as_deref() != Some(version.as_str()) {
             self.remember(NOTIFIED, &version);
@@ -735,7 +882,7 @@ impl Workbench {
             UpdateState::Error(Failure { release: Some(r), .. }) => r.clone(),
             _ => return,
         };
-        if matches!(self.update.kind, InstallKind::Manual) || release.asset.is_none() {
+        if matches!(self.update.kind, InstallKind::Manual(_)) || release.asset.is_none() {
             return;
         }
         let kind = self.update.kind.clone();
@@ -823,6 +970,10 @@ impl Workbench {
         self.update.run = None;
         let failure = Failure::from_error(error, release, phase);
         eprintln!("update: {}: {}", failure.title(), failure.detail);
+        if phase == Phase::Check {
+            let now = self.update.backend.now();
+            self.update.failures.push(now);
+        }
         if self.update.dialog == Dialog::Update {
             self.update.state = UpdateState::Error(failure);
         } else if phase == Phase::Check {
@@ -911,7 +1062,7 @@ impl Workbench {
     fn plan_for_restart(&self) -> Option<InstallPlan> {
         match self.update.backend.install_kind() {
             InstallKind::MacBundle { app } => Some(InstallPlan::MacApp { app }),
-            InstallKind::WindowsInstalled | InstallKind::Manual => None,
+            InstallKind::WindowsInstalled | InstallKind::Manual(_) => None,
         }
     }
 
@@ -930,10 +1081,22 @@ impl Workbench {
         backend.quit(cx);
     }
 
-    /// While the new app is being swapped in, ending the process can leave a half-installed app: ask first.
+    /// Is the app being swapped in, by this window or any other?
+    fn installing_anywhere(&self, window: &Window, cx: &App) -> bool {
+        let me = window.window_handle();
+        matches!(self.update.state, UpdateState::Installing { .. })
+            || cx
+                .windows()
+                .into_iter()
+                .filter(|w| *w != me)
+                .filter_map(|w| w.downcast::<Workbench>())
+                .any(|w| w.read(cx).is_ok_and(|wb| matches!(wb.update.state, UpdateState::Installing { .. })))
+    }
+
+    /// While the new app is being swapped in (by any window), ending the process can leave a half-installed app: ask first.
     /// `true`: the question is on screen and the caller must stop.
     pub(super) fn hold_quit_for_install(&mut self, mode: QuitMode, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if !matches!(self.update.state, UpdateState::Installing { .. }) {
+        if !self.installing_anywhere(window, cx) {
             return false;
         }
         let answer = window.prompt(
@@ -952,9 +1115,19 @@ impl Workbench {
         true
     }
 
-    /// The last window is being closed (which ends the app).
+    /// A window is being closed. The last one ends the app, so it asks like quitting does. Another one that is doing the install
+    /// stays open for the few seconds it takes: closing it would drop the answer (the version that is now installed, the
+    /// restart item), and the other windows would never learn that a restart is due.
     pub(crate) fn hold_close_for_install(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        self.hold_quit_for_install(QuitMode::Quit, window, cx)
+        if cx.windows().len() == 1 {
+            return self.hold_quit_for_install(QuitMode::Quit, window, cx);
+        }
+        if !matches!(self.update.state, UpdateState::Installing { .. }) {
+            return false;
+        }
+        self.notice = Some(Notice::Info(t("This window is installing an update. You can close it in a few seconds.").into()));
+        cx.notify();
+        true
     }
 
     /// The application is quitting: a download is cancelled (its worker removes the partial file) and the returned flag says when
@@ -997,6 +1170,7 @@ impl Workbench {
     fn record_check(&mut self) {
         let now = self.update.backend.now();
         self.update.last_check = Some(now);
+        self.update.failures.clear();
         self.remember(LAST_CHECK, &unix_ms(now).to_string());
     }
 }
@@ -1044,11 +1218,24 @@ mod tests {
 
     #[test]
     fn every_error_kind_has_a_plain_title_and_only_network_errors_are_retried() {
-        let failure = |kind, phase| Failure { kind, detail: String::new(), release: None, phase };
+        let failure = |kind, phase| Failure { kind, cause: Cause::Other, detail: String::new(), release: None, phase };
         assert_eq!(failure(ErrorKind::Network, Phase::Check).title(), "Couldn't check for updates");
         assert_eq!(failure(ErrorKind::Network, Phase::Download).title(), "Couldn't download the update");
         assert_eq!(failure(ErrorKind::Untrusted, Phase::Download).title(), "The update couldn't be verified");
         assert_eq!(failure(ErrorKind::Install, Phase::Install).title(), "The update couldn't be installed");
         assert!(failure(ErrorKind::Untrusted, Phase::Check).lead().starts_with("Nothing was installed."));
+    }
+
+    #[test]
+    fn the_scroll_keys_stay_inside_the_notes() {
+        let target = notes_scroll_target;
+        assert_eq!(target("down", 0., 260., 500.), Some(-20.));
+        assert_eq!(target("up", 0., 260., 500.), Some(0.), "not above the top");
+        assert_eq!(target("pagedown", 0., 260., 500.), Some(-240.), "a page less a line");
+        assert_eq!(target("pagedown", -400., 260., 500.), Some(-500.), "not below the end");
+        assert_eq!(target("end", 0., 260., 500.), Some(-500.));
+        assert_eq!(target("home", -300., 260., 500.), Some(0.));
+        assert_eq!(target("down", 0., 260., 0.), Some(0.), "notes that fit do not move");
+        assert_eq!(target("a", 0., 260., 500.), None);
     }
 }

@@ -31,7 +31,7 @@ impl Workbench {
     /// The modal card with a scrim behind it, or `None` while no dialog is open.
     pub(super) fn update_dialog(&self, p: &Palette, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let model = self.dialog_model(cx)?;
-        let wide = matches!(model.body, Body::Notes(_));
+        let wide = matches!(model.body, Body::Notes { .. });
         let tone = tone_color(model.tone, p);
         let header = div()
             .flex()
@@ -91,13 +91,13 @@ impl Workbench {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
-                    if !this.update.focus.iter().any(|h| h.contains_focused(window, cx)) {
+                    if !this.update.focus.iter().chain([&this.update.notes_focus]).any(|h| h.contains_focused(window, cx)) {
                         this.focus_update_primary(window, cx);
                     }
                 }),
             )
             .child(header)
-            .child(self.update_body(&model, p))
+            .child(self.update_body(&model, p, cx))
             .child(self.update_footer(&model, p, cx));
         Some(deferred(
             div()
@@ -115,7 +115,7 @@ impl Workbench {
         ))
     }
 
-    fn update_body(&self, model: &DialogModel, p: &Palette) -> AnyElement {
+    fn update_body(&self, model: &DialogModel, p: &Palette, cx: &mut Context<Self>) -> AnyElement {
         let muted = |d: gpui::Div| d.text_size(px(text::SM.0)).line_height(px(text::SM.1)).text_color(c(p.text_muted));
         match &model.body {
             Body::None => div().into_any_element(),
@@ -127,7 +127,7 @@ impl Workbench {
                 .line_height(px(text::SM.1 + 2.))
                 .children(lines.iter().map(|l| div().child(l.clone())))
                 .into_any_element(),
-            Body::Notes(note) => div()
+            Body::Notes { note, .. } => div()
                 .min_h_0()
                 .flex()
                 .flex_col()
@@ -147,8 +147,18 @@ impl Workbench {
                     )
                 })
                 .child(
+                    // Focusable so that the keyboard can read what the mouse wheel can: Tab reaches it before the buttons.
                     div()
                         .id("update-notes")
+                        .track_focus(&self.update.notes_focus)
+                        .track_scroll(&self.update.notes_scroll)
+                        .focus(|s| s.border_color(c(p.focus_ring)))
+                        .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
+                            if this.scroll_notes(&event.keystroke.key, cx) {
+                                cx.stop_propagation();
+                            }
+                        }))
+                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, _| window.focus(&this.update.notes_focus)))
                         .min_h_0()
                         .max_h(px(NOTES_MAX_H))
                         .overflow_y_scroll()

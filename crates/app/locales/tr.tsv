@@ -1824,9 +1824,9 @@ No settings folder on this machine.	Bu bilgisayarda ayar klasörü yok.
 # ======== Updates ========
 Help: Check for Updates…	Yardım: Güncellemeleri Denetle…
 Check for Updates…	Güncellemeleri Denetle…
-Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (asks github.com once a day whether a newer release exists; only the request is sent, nothing about you) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it	Yeni Codeyard sürümlerine bak: ask (henüz karar verilmedi; hiçbir şey denetlenmez), daily (github.com'a günde bir kez daha yeni bir sürüm olup olmadığını sorar; yalnızca isteğin kendisi gönderilir, sizinle ilgili hiçbir şey gönderilmez) ya da manual (yalnızca Güncellemeleri Denetle'yi seçtiğinizde). Yalnızca kendi ayarlarınızda geçerlidir; bir klasör bunu değiştiremez
+Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (once a day, downloads two small files from github.com, the checksum list of the latest release and its signature; GitHub sees your IP address and that the request comes from curl, nothing about your files) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it	Yeni Codeyard sürümlerine bak: ask (henüz karar verilmedi; hiçbir şey denetlenmez), daily (günde bir kez github.com'dan iki küçük dosya indirir: son sürümün sağlama toplamı listesi ve imzası; GitHub IP adresinizi ve isteğin curl'den geldiğini görür, dosyalarınızla ilgili hiçbir şey gönderilmez) ya da manual (yalnızca Güncellemeleri Denetle'yi seçtiğinizde). Yalnızca kendi ayarlarınızda geçerlidir; bir klasör bunu değiştiremez
 Check for updates automatically?	Güncellemeler otomatik denetlensin mi?
-Once a day, Codeyard can ask github.com for the checksum list of the latest release to see whether a newer version exists. That request is all that is sent: nothing about you or your files, no account and no tracking.	Codeyard, daha yeni bir sürüm olup olmadığını görmek için günde bir kez github.com'dan son sürümün sağlama toplamı listesini isteyebilir. Gönderilen tek şey bu istektir: sizinle ya da dosyalarınızla ilgili hiçbir şey gönderilmez, hesap ya da izleme yoktur.
+Once a day, Codeyard can look for a newer version. It downloads two small files from github.com: the checksum list of the latest release and its signature. GitHub sees your IP address and that the request comes from curl; no account, no cookies, nothing about your files.	Codeyard günde bir kez daha yeni bir sürüm olup olmadığına bakabilir. github.com'dan iki küçük dosya indirir: son sürümün sağlama toplamı listesi ve imzası. GitHub IP adresinizi ve isteğin curl'den geldiğini görür; hesap, çerez ya da dosyalarınıza dair hiçbir bilgi yoktur.
 You can change this at any time in Settings (update.check). Check for Updates… always works, whatever you choose.	Bunu istediğiniz zaman Ayarlar'dan (update.check) değiştirebilirsiniz. Ne seçerseniz seçin, Güncellemeleri Denetle… her zaman çalışır.
 Check Daily	Her Gün Denetle
 Only When I Ask	Yalnızca Ben İstediğimde
@@ -1872,9 +1872,22 @@ Couldn't download the update	Güncelleme indirilemedi
 The update couldn't be verified	Güncelleme doğrulanamadı
 The update couldn't be installed	Güncelleme kurulamadı
 Codeyard couldn't reach the update server. Check your internet connection and try again.	Codeyard güncelleme sunucusuna ulaşamadı. İnternet bağlantınızı denetleyip yeniden deneyin.
-Nothing was installed. What the update server sent didn't match the signed checksums, so Codeyard discarded it.	Hiçbir şey kurulmadı. Güncelleme sunucusundan gelenler imzalı sağlama toplamlarıyla eşleşmedi, bu yüzden Codeyard bunları attı.
+Nothing was installed. What the update server sent didn't match the signed checksums, so Codeyard discarded it.	Hiçbir şey kurulmadı. Güncelleme sunucusundan gelenler imzalı sağlama toplamlarıyla eşleşmedi, bu yüzden Codeyard bunları reddetti.
 The new version couldn't be installed from here. You can download it from the release page instead.	Yeni sürüm buradan kurulamadı. Bunun yerine sürüm sayfasından indirebilirsiniz.
 Try Again	Yeniden Dene
+Update {}	Güncelleme {}
+This is a development build and can't update itself. Download the new version yourself.	Bu bir geliştirme sürümü ve kendini güncelleyemez; yeni sürümü kendiniz indirin.
+Codeyard can't replace itself in {}: your account can't write there. Download the new version and drag it in yourself.	Codeyard {} içinde kendini değiştiremez: hesabınızın orada yazma izni yok. Yeni sürümü indirip kendiniz oraya sürükleyin.
+This is the portable version, which can't update itself. Download the new version and replace it yourself.	Bu taşınabilir sürüm kendini güncelleyemez; yeni sürümü indirip eskisinin yerine kendiniz koyun.
+Codeyard can't update itself on this system. Download the new version yourself.	Codeyard bu sistemde kendini güncelleyemez; yeni sürümü kendiniz indirin.
+Nothing was installed. This release isn't signed, so Codeyard can't verify it.	Hiçbir şey kurulmadı. Bu sürüm imzalı olmadığı için Codeyard onu doğrulayamaz.
+Codeyard couldn't set up a secure connection to the update server. Check that your date and time are right and that no proxy or security software is blocking it, then try again.	Codeyard güncelleme sunucusuyla güvenli bir bağlantı kuramadı. Tarih ve saatinizin doğru olduğunu, hiçbir vekil sunucunun ya da güvenlik yazılımının engellemediğini denetleyip yeniden deneyin.
+GitHub has no release with a checksum list yet, so there is nothing to compare this version with. You can look at the release page.	GitHub'da henüz sağlama toplamı listesi olan bir sürüm yok, bu yüzden bu sürümle karşılaştıracak bir şey yok. Sürüm sayfasına bakabilirsiniz.
+There isn't enough free disk space for the download. Free some space and try again.	İndirme için yeterli boş disk alanı yok. Biraz yer açıp yeniden deneyin.
+The update failed part-way and Codeyard couldn't put the previous version back. It may be at {0}. If Codeyard doesn't start, move it back to {1}.	Güncelleme yarıda kesildi ve Codeyard önceki sürümü geri koyamadı. {0} konumunda olabilir. Codeyard açılmazsa onu {1} konumuna geri taşıyın.
+The release notes are longer: read the rest on GitHub.	Sürüm notları daha uzun: devamını GitHub'da okuyun.
+The release notes are longer: read the rest at {}	Sürüm notları daha uzun: devamını {} adresinde okuyun
+This window is installing an update. You can close it in a few seconds.	Bu pencere bir güncelleme kuruyor. Birkaç saniye sonra kapatabilirsiniz.
 Codeyard could not start the new version: {}. The update is installed; open Codeyard again to use it.	Codeyard yeni sürümü başlatamadı: {}. Güncelleme kuruldu; kullanmak için Codeyard'ı yeniden açın.
 Restart without saving	Kaydetmeden yeniden başlat
 Restarting loses everything since the last save.	Yeniden başlatmak, son kayıttan beri yapılan her şeyi kaybettirir.

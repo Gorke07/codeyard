@@ -136,8 +136,11 @@ Close details
 Close to the Right	
 Close without saving	
 Closing the window loses everything since the last save.	
+Codeyard can't replace itself in {}: your account can't write there. Download the new version and drag it in yourself.	
+Codeyard can't update itself on this system. Download the new version yourself.	
 Codeyard could not start the new version: {}. The update is installed; open Codeyard again to use it.	
 Codeyard couldn't reach the update server. Check your internet connection and try again.	
+Codeyard couldn't set up a secure connection to the update server. Check that your date and time are right and that no proxy or security software is blocking it, then try again.	
 Codeyard is still installing an update	
 Codeyard is up to date	
 Codeyard {} is available	
@@ -577,6 +580,7 @@ Git: Stash (Include Untracked)
 Git: Sync	
 Git: Undo Last Commit	
 Git: View File History	
+GitHub has no release with a checksum list yet, so there is nothing to compare this version with. You can look at the release page.	
 GitHub's rate limit for anonymous requests: sign in with `gh auth login` or set GITHUB_TOKEN	
 GitHub: Pull Requests…	
 Give the theme a name.	
@@ -701,7 +705,7 @@ Loading pull requests…
 Loading…	
 Local	
 Local history	
-Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (asks github.com once a day whether a newer release exists; only the request is sent, nothing about you) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it	
+Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (once a day, downloads two small files from github.com, the checksum list of the latest release and its signature; GitHub sees your IP address and that the request comes from curl, nothing about your files) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it	
 Lost the connection to {}: {}. Your open files stay here and unsaved changes are kept, but they cannot be saved until you reconnect (File: Save a Copy to This Computer… keeps one locally).	
 Lost the connection to {}: {}. Your open files stay here.	
 Manage SSH hosts	
@@ -861,13 +865,14 @@ Nothing to choose from.
 Nothing to commit	
 Nothing to rename here	
 Nothing to run: select some text or put the cursor on a line.	
+Nothing was installed. This release isn't signed, so Codeyard can't verify it.	
 Nothing was installed. What the update server sent didn't match the signed checksums, so Codeyard discarded it.	
 Nothing yet.	
 Nothing yet: open a folder to see it here.	
 Nov	
 Oct	
 On this computer	
-Once a day, Codeyard can ask github.com for the checksum list of the latest release to see whether a newer version exists. That request is all that is sent: nothing about you or your files, no account and no tracking.	
+Once a day, Codeyard can look for a newer version. It downloads two small files from github.com: the checksum list of the latest release and its signature. GitHub sees your IP address and that the request comes from curl; no account, no cookies, nothing about your files.	
 One line per commit: the most history in a narrow sidebar	
 One quiet color, outline glyphs	
 Only When I Ask	
@@ -1286,6 +1291,8 @@ The folder and everything in it will be deleted.
 The folder could not be read on the server: {}	
 The new version couldn't be installed from here. You can download it from the release page instead.	
 The program finished without stopping at any breakpoint. The debugger matches breakpoints to the debug info by file path: build with debug info (-g) from this folder, and check that the breakpoint is on a line with code.	
+The release notes are longer: read the rest at {}	
+The release notes are longer: read the rest on GitHub.	
 The remote “{}” is not reachable as a git repository (it may be private or renamed); check `git remote -v`	
 The request failed.	
 The response could not be saved (curl write error).	
@@ -1295,6 +1302,7 @@ The server did not answer within 60 seconds.
 The server wants credentials: run the command once in the terminal (or set up an SSH key).	
 The update couldn't be installed	
 The update couldn't be verified	
+The update failed part-way and Codeyard couldn't put the previous version back. It may be at {0}. If Codeyard doesn't start, move it back to {1}.	
 The update failed. Click for details.	
 The workspace file lists no folder that exists on this computer.	
 The workspace has no extra folders.	
@@ -1309,6 +1317,7 @@ There are no local changes to stash
 There are no stashes.	
 There is no commit to undo	
 There is no request here. Write METHOD URL on a line, separate requests with ###.	
+There isn't enough free disk space for the download. Free some space and try again.	
 They were not found.	
 This can't be undone.	
 This copy isn't installed as an app, so download the new version yourself.	
@@ -1323,6 +1332,8 @@ This file is outside the repository root
 This file mixes line endings; saving writes all of them as {}, like its first line. Change it in the status bar.	
 This file was deleted on disk. Saving will create it again.	
 This folder is not a git repository.	
+This is a development build and can't update itself. Download the new version yourself.	
+This is the portable version, which can't update itself. Download the new version and replace it yourself.	
 This language server does not support incoming calls	
 This language server does not support outgoing calls	
 This language server does not support subtypes	
@@ -1330,6 +1341,7 @@ This language server does not support supertypes
 This looks like a binary file, so it was not opened as text.	
 This release has no installer for this system. Download it from the release page.	
 This repository has no remote. Add one with Git: Add Remote…	
+This window is installing an update. You can close it in a few seconds.	
 Thursday	
 Timeline	
 Toggle Bookmark	
@@ -1371,6 +1383,7 @@ Untracked files will be deleted. This can't be undone.
 Update failed	
 Update installed	
 Update installed. Restart Codeyard to finish.	
+Update {}	
 Updating…	
 Updating… {}%	
 Upload	

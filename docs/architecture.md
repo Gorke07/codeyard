@@ -70,10 +70,10 @@ into private state any other way.
 | Schemas | `jsonschema` (no default features), `yaml-rust2` | validation and hover without Node; alias budget bounds YAML expansion |
 | Spelling | `spellbook` (pure Rust Hunspell) | English built in, other languages installable |
 
-No server, no account, no plugin store. The only outbound requests are the ones the user triggers: SchemaStore and
-schema downloads (cached 7 days, can be disabled), dictionary installs, GitHub pull request listing,
-requests sent from `.http` files and update checks. The app contacts the network on its own only when the user chose
-daily update checks (`update.check`); otherwise an update check happens when the user asks for one.
+No server, no account, no plugin store. Outbound requests: SchemaStore and schema downloads (cached 7 days, can be disabled),
+dictionary installs, GitHub pull request listing, requests sent from `.http` files and update checks. The update check is the one
+the app starts by itself, and only when the user chose daily checks (`update.check`); otherwise it happens when the user asks
+for one. It downloads two small files from github.com (see [Updates](#updates) for exactly what GitHub sees).
 
 ## Updates
 
@@ -81,25 +81,50 @@ daily update checks (`update.check`); otherwise an update check happens when the
 
 - **What is fetched.** From `<repository>/releases/latest/download/` (`CODEYARD_UPDATE_URL` replaces it): `SHA256SUMS.txt` and
   `SHA256SUMS.txt.sig` (at most 64 KiB and exactly 64 bytes). Only when the signed list names a newer version: `RELEASE_NOTES.md`
-  (256 KiB) and, when the user agrees, the installer for this platform (400 MiB). No GitHub API, no token, nothing is sent but
-  the request itself. The requests are made by the system `curl` (https only, TLS 1.2+, five redirects, timeouts).
+  (256 KiB) and, when the user agrees, the installer for this platform (400 MiB); these two come from
+  `<repository>/releases/download/v<version>/` (the tag of the version the verified list names), so a release published in between
+  cannot be mixed with the list. No GitHub API, no token. github.com answers each request with a redirect to
+  `release-assets.githubusercontent.com`; what GitHub sees is the IP address and `curl`'s user agent. No cookies, no identifier in
+  the URL, nothing about the user's files. The requests are made by the system `curl` (absolute path on macOS; https only, TLS 1.2+,
+  five redirects, timeouts, stall detection) and a `404`/`410` is told apart from a connection failure by the status in curl's message
+  (curl 8 on macOS ends an HTTP/2 error with exit status 56, not 22). `SHA256SUMS.txt` answering 404 means there is no release to look
+  at (`NoRelease`: not an error to retry, not "up to date" either, because the latest release cannot be judged); `SHA256SUMS.txt.sig`
+  answering 404 means the release is unsigned (`Unsigned`, like v0.1.0 today). A signed list that names no installer for this
+  platform is still an update (`asset: None`: the UI points to the release page); one that names no installer for any platform, or no
+  `RELEASE_NOTES.md`, is refused. The list's format is strict and `scripts/verify-release.sh` applies the same rules.
 - **What is verified, in this order.** The Ed25519 signature over the exact bytes of `SHA256SUMS.txt` against the public keys
   built into the app (`TRUSTED_KEYS`, a list so that a key can be rotated); only then is the list parsed. The version comes
-  from the signed asset names (`x.y.z`, digits only) and is offered only if it is strictly newer than the running one. The
-  notes and the installer must match their signed SHA-256; the installer is hashed again right before it is mounted or run.
-- **When.** `Policy::Daily` (setting `update.check`) checks at most once in 24 hours; `Ask` and `Manual` never check by
-  themselves. A check never installs anything: download and install are separate steps that need the user's confirmation.
+  from the signed asset names (`x.y.z`, digits only) and is offered only if it is strictly newer than the running one and not
+  lower than the highest version this installation was ever offered (`update.highest_seen`, a replayed older list is logged and
+  ignored). The notes and the installer must match their signed SHA-256; the installer is hashed again right before it is mounted
+  or run.
+- **What the signature cannot do.** It has no date and no revocation. Anyone who can answer a client's requests can freeze it on an
+  older signed release, and a client that never saw a newer one cannot recognise a replay (`highest_seen` only helps clients that
+  did). The remedy is a key rotation in a normal release (see `TRUSTED_KEYS` and [SECURITY.md](../SECURITY.md#updates-and-signatures)).
+- **When.** `Policy::Daily` (setting `update.check`) allows one successful check in 24 hours; a failed check does not count, so
+  the app looks again every three hours while it runs, at most three failed attempts per rolling day (`retry_allowed`, kept in
+  memory: a restart starts fresh). `Ask` and `Manual` never check by themselves. A check never installs anything: download and
+  install are separate steps that need the user's confirmation. The first-run question waits for a quiet keyboard (3 s without a key).
 - **Installing.** macOS, app bundle in a writable folder: the disk image is mounted read-only at a private mount point, the app
   is copied next to the installed one, then checked (bundle identifier, version, `codesign --verify --deep --strict`), then
-  swapped by two renames that are undone on failure. Windows, Inno installation: the verified setup program runs silently.
-  Everything else (debug builds, bare binaries, Linux, a portable zip, a read-only `/Applications`) is `Manual`: the UI shows
-  the release page.
+  exchanged with it in one atomic step (`renamex_np` with `RENAME_SWAP`), or, where the file system cannot, swapped by two renames
+  that are undone on failure; the swapped-out copy is deleted. Nothing clears the quarantine flag: `curl` does not set one, so an
+  update installed this way skips Gatekeeper's first-launch check (builds are not notarized yet). Leftovers of a run that died
+  (`.Codeyard.update-<pid>.app`, `.Codeyard.old-<pid>.app` beside the app, `codeyard-update-mnt-<pid>-*` mount points, an `updates/`
+  download folder older than two hours) are removed before staging and at start, never those of a live process, and never the backup
+  while the installed app is missing. Windows, Inno installation: the verified setup program runs silently. Everything else (debug
+  builds, bare binaries, Linux, a portable zip, a read-only `/Applications`) is `Manual(reason)`: the UI shows the release page and
+  says which reason it is. Helper programs are run by absolute path (`/usr/bin/curl`, `hdiutil`, …); tests inject a different `curl`
+  through `Config`.
 - **The UI.** `workbench_update.rs` is the state machine (`Idle`, `Checking`, `UpToDate`, `Available`, `Downloading`, `Installing`,
   `Ready`, `Error`) and everything the dialog says; `workbench_view_update.rs` draws it and the status bar item. The network, the
   installer, the clock and quitting are behind `UpdateBackend` (`update_backend.rs`), so tests script every outcome. Machine-written
   values (time of the last good check, skipped version, installed version, the notified version, when the question may come back) are
   keys `update.*` in the state database; the one setting, `update.check`, is user-only like `ui.language`. Restarting goes through the
-  normal quit path (hot exit), starts the new version first and quits second. User-facing description: [user guide](user-guide.md#updates).
+  normal quit path (hot exit), starts the new version first and quits second. While ANY window is swapping the app in, quitting asks in
+  every window and that window cannot be closed (its result is the only thing that records the installed version). Closing the dialog
+  of a failed update drops the failure, so its status item goes and the next background check is not held back. User-facing
+  description: [user guide](user-guide.md#updates).
 
 ## Local state
 

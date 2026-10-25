@@ -46,6 +46,10 @@ gpui = { version = "=0.2.2", features = ["test-support"] }
 # Tests generate a throw-away signing key.
 ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
 
+# Update install: atomic app swap and process liveness checks (libc is already used by host, agent and syntax).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
+
 # macOS: Dock icon (also when run unbundled: cargo run, bare binary).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

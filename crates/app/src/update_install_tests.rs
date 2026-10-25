@@ -19,7 +19,23 @@ fn read(path: &Path) -> String {
 
 #[test]
 fn update_install_kind_is_manual_in_a_debug_build() {
-    assert_eq!(install_kind(), InstallKind::Manual);
+    assert_eq!(install_kind(), InstallKind::Manual(ManualReason::DevelopmentBuild));
+}
+
+#[test]
+fn update_install_kind_says_why_a_copy_cannot_replace_itself() {
+    let yes = |_: &Path| true;
+    let no = |_: &Path| false;
+    let bundle = Path::new("/Applications/Codeyard.app/Contents/MacOS/codeyard");
+    assert_eq!(kind_for(bundle, true, false, &yes), InstallKind::MacBundle { app: "/Applications/Codeyard.app".into() });
+    assert_eq!(kind_for(bundle, true, false, &no), InstallKind::Manual(ManualReason::ReadOnlyFolder("/Applications".into())));
+    assert_eq!(kind_for(Path::new("/work/target/release/codeyard"), true, false, &yes), InstallKind::Manual(ManualReason::NotInstalled));
+    assert_eq!(kind_for(Path::new("/usr/bin/codeyard"), false, false, &yes), InstallKind::Manual(ManualReason::OtherSystem));
+    let (dir, _g) = scratch("kind-windows");
+    let exe = dir.join("codeyard.exe");
+    assert_eq!(kind_for(&exe, false, true, &yes), InstallKind::Manual(ManualReason::Portable), "no uninstaller next to it: the ZIP");
+    write(&dir.join("unins000.exe"), "");
+    assert_eq!(kind_for(&exe, false, true, &yes), InstallKind::WindowsInstalled);
 }
 
 #[test]
@@ -97,9 +113,60 @@ fn update_swap_replaces_the_app_and_keeps_the_old_one_aside() {
     let (app, staged, old) = (dir.join("A.app"), dir.join("staged"), dir.join("old"));
     write(&app.join("v"), "1");
     write(&staged.join("v"), "2");
-    swap(&app, &staged, &old, &|a, b| std::fs::rename(a, b)).unwrap();
+    let previous = swap(&app, &staged, &old, &|a, b| std::fs::rename(a, b), &no_exchange).unwrap();
     assert_eq!((read(&app.join("v")), read(&old.join("v"))), ("2".into(), "1".into()));
+    assert_eq!(previous, old, "the old copy is where the two renames left it");
     assert!(!staged.exists());
+}
+
+fn no_exchange(_: &Path, _: &Path) -> io::Result<()> {
+    Err(io::ErrorKind::Unsupported.into())
+}
+
+/// The atomic path: one exchange, no rename at all, and the old app ends up at the staging path.
+#[test]
+fn update_swap_exchanges_the_two_apps_in_one_step_when_it_can() {
+    let (dir, _g) = scratch("swap-exchange");
+    let (app, staged, old) = (dir.join("A.app"), dir.join("staged"), dir.join("old"));
+    write(&app.join("v"), "1");
+    write(&staged.join("v"), "2");
+    let no_rename = |_: &Path, _: &Path| -> io::Result<()> { panic!("an exchange needs no rename") };
+    let swapped = |a: &Path, b: &Path| {
+        let (tmp, a2) = (dir.join("tmp"), a.to_path_buf());
+        std::fs::rename(a, &tmp)?;
+        std::fs::rename(b, &a2)?;
+        std::fs::rename(&tmp, b)
+    };
+    assert_eq!(swap(&app, &staged, &old, &no_rename, &swapped).unwrap(), staged);
+    assert_eq!((read(&app.join("v")), read(&staged.join("v"))), ("2".into(), "1".into()));
+    assert!(!old.exists());
+}
+
+/// The real system call on this machine's file system (a temp folder on APFS supports it).
+#[cfg(target_os = "macos")]
+#[test]
+fn update_swap_uses_renamex_np_on_macos() {
+    let (dir, _g) = scratch("swap-renamex");
+    let (app, staged, old) = (dir.join("A.app"), dir.join("staged"), dir.join("old"));
+    write(&app.join("v"), "1");
+    write(&staged.join("v"), "2");
+    let previous = swap(&app, &staged, &old, &|a, b| std::fs::rename(a, b), &exchange).unwrap();
+    assert_eq!(previous, staged, "the exchange, not the two renames: no `old` copy was ever made");
+    assert_eq!((read(&app.join("v")), read(&previous.join("v"))), ("2".into(), "1".into()));
+    assert!(!old.exists());
+}
+
+#[test]
+fn update_swap_falls_back_to_two_renames_when_the_exchange_is_not_possible() {
+    let (dir, _g) = scratch("swap-fallback");
+    let (app, staged, old) = (dir.join("A.app"), dir.join("staged"), dir.join("old"));
+    write(&app.join("v"), "1");
+    write(&staged.join("v"), "2");
+    // EINVAL is what a file system without RENAME_SWAP answers.
+    let einval = |_: &Path, _: &Path| -> io::Result<()> { Err(io::Error::from_raw_os_error(22)) };
+    assert_eq!(swap(&app, &staged, &old, &|a, b| std::fs::rename(a, b), &einval).unwrap(), old);
+    assert_eq!((read(&app.join("v")), read(&old.join("v"))), ("2".into(), "1".into()));
+    assert!(exchange_unsupported(&io::Error::from_raw_os_error(22)) && !exchange_unsupported(&io::Error::from_raw_os_error(13)));
 }
 
 #[test]
@@ -107,7 +174,7 @@ fn update_swap_failure_rolls_back_and_leaves_the_old_app_intact() {
     let (dir, _g) = scratch("swap-rollback");
     let (app, old) = (dir.join("A.app"), dir.join("old"));
     write(&app.join("v"), "1");
-    let e = swap(&app, &dir.join("no-such-staged"), &old, &|a, b| std::fs::rename(a, b)).unwrap_err();
+    let e = swap(&app, &dir.join("no-such-staged"), &old, &|a, b| std::fs::rename(a, b), &no_exchange).unwrap_err();
     assert!(matches!(e, UpdateError::Io { what: "put the new app in place", .. }), "{e}");
     assert_eq!(read(&app.join("v")), "1");
     assert!(!old.exists(), "moved back");
@@ -124,7 +191,7 @@ fn update_swap_failure_without_rollback_names_where_the_old_app_is() {
         calls.set(calls.get() + 1);
         if calls.get() == 1 { std::fs::rename(a, b) } else { Err(io::Error::other("injected")) }
     };
-    let e = swap(&app, &staged, &old, &flaky).unwrap_err();
+    let e = swap(&app, &staged, &old, &flaky, &no_exchange).unwrap_err();
     assert!(matches!(&e, UpdateError::RollbackFailed { backup, .. } if *backup == old), "{e}");
     assert_eq!(e.kind(), ErrorKind::Install);
     assert!(e.to_string().contains(old.to_str().unwrap()) && e.to_string().contains(app.to_str().unwrap()));
@@ -145,11 +212,102 @@ fn update_install_rechecks_the_hash_and_refuses_manual_installs() {
     let e = stage_and_install(&swapped, &InstallKind::MacBundle { app: dir.join("Codeyard.app") }).unwrap_err();
     assert!(matches!(e, UpdateError::HashMismatch(_)), "{e}");
     let fine = downloaded(&dir, b"good", b"good");
-    let e = stage_and_install(&fine, &InstallKind::Manual).unwrap_err();
+    let e = stage_and_install(&fine, &InstallKind::Manual(ManualReason::NotInstalled)).unwrap_err();
     assert!(matches!(e, UpdateError::ManualOnly), "{e}");
     let mut none = downloaded(&dir, b"good", b"good");
     none.release.asset = None;
-    assert!(matches!(stage_and_install(&none, &InstallKind::Manual).unwrap_err(), UpdateError::NoInstaller));
+    assert!(matches!(stage_and_install(&none, &InstallKind::Manual(ManualReason::NotInstalled)).unwrap_err(), UpdateError::NoInstaller));
+}
+
+// --- Leftovers ---
+
+/// The id of a process that has just ended.
+#[cfg(unix)]
+fn dead_pid() -> u32 {
+    let mut child = Command::new("/bin/sh").args(["-c", "exit 0"]).spawn().unwrap();
+    let pid = child.id();
+    child.wait().unwrap();
+    pid
+}
+
+#[cfg(unix)]
+#[test]
+fn update_a_process_is_alive_until_it_ends() {
+    assert!(pid_alive(std::process::id()));
+    assert!(!pid_alive(dead_pid()));
+    assert!(pid_alive(1), "init exists even though we may not signal it");
+    assert_eq!(pid_in_name(".Codeyard.update-123.app", STAGED_PREFIX), Some(123));
+    assert_eq!(pid_in_name("codeyard-update-mnt-77-3", MOUNT_PREFIX), Some(77));
+    assert_eq!(pid_in_name(".Codeyard.update-x.app", STAGED_PREFIX), None);
+    assert_eq!(pid_in_name("Codeyard.app", STAGED_PREFIX), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn update_leftovers_of_dead_processes_are_swept_and_live_ones_are_not() {
+    let (dir, _g) = scratch("sweep");
+    let (apps, temp) = (dir.join("apps"), dir.join("tmp"));
+    let (dead, live) = (dead_pid(), std::process::id());
+    let name = |prefix: &str, pid: u32| format!("{prefix}{pid}.app");
+    let staged = |pid| apps.join(name(STAGED_PREFIX, pid));
+    let backup = |pid| apps.join(name(OLD_PREFIX, pid));
+    for pid in [dead, live] {
+        write(&staged(pid).join("Contents/x"), "x");
+        write(&backup(pid).join("Contents/x"), "x");
+        write(&temp.join(format!("{MOUNT_PREFIX}{pid}-0/file")), "image content");
+    }
+    write(&apps.join("Codeyard.app/Contents/x"), "installed");
+    write(&apps.join("Other.app/Contents/x"), "somebody else's app");
+    // A mount point that was detached and is empty goes; one with something in it stays (it could be somebody's image).
+    std::fs::create_dir_all(temp.join(format!("{MOUNT_PREFIX}{dead}-1"))).unwrap();
+    sweep_dir(&apps, true, &temp);
+    assert!(!staged(dead).exists() && !backup(dead).exists(), "what a dead process left");
+    assert!(staged(live).exists() && backup(live).exists(), "what a running process is using");
+    assert!(apps.join("Codeyard.app").exists() && apps.join("Other.app").exists(), "nothing else is touched");
+    assert!(!temp.join(format!("{MOUNT_PREFIX}{dead}-1")).exists());
+    assert!(temp.join(format!("{MOUNT_PREFIX}{dead}-0/file")).exists(), "a folder with content is never emptied by the sweep");
+    assert!(temp.join(format!("{MOUNT_PREFIX}{live}-0")).exists());
+}
+
+/// After `RollbackFailed` the backup is the only copy of the app: it survives until the installed app is back.
+#[cfg(unix)]
+#[test]
+fn update_the_backup_is_kept_while_the_installed_app_is_missing() {
+    let (dir, _g) = scratch("sweep-backup");
+    let temp = dir.join("tmp");
+    let backup = dir.join(format!("{OLD_PREFIX}{}.app", dead_pid()));
+    let staged = dir.join(format!("{STAGED_PREFIX}{}.app", dead_pid()));
+    write(&backup.join("Contents/x"), "the only copy");
+    write(&staged.join("Contents/x"), "half a copy");
+    sweep_dir(&dir, false, &temp);
+    assert!(backup.exists(), "no installed app: this is all the user has");
+    assert!(!staged.exists(), "a staging copy is never the only one");
+    sweep_dir(&dir, true, &temp);
+    assert!(!backup.exists());
+}
+
+#[test]
+fn update_an_old_download_folder_is_removed_and_a_recent_one_is_not() {
+    let (dir, _g) = scratch("sweep-downloads");
+    let downloads = dir.join("updates");
+    write(&downloads.join("Codeyard-0.2.0-macos-arm64.dmg"), "partial");
+    let modified = std::fs::metadata(&downloads).unwrap().modified().unwrap();
+    sweep_downloads(&downloads, modified + Duration::from_secs(60));
+    assert!(downloads.exists(), "an update may be downloading right now");
+    sweep_downloads(&downloads, modified + STALE_DOWNLOADS);
+    assert!(!downloads.exists());
+    sweep_downloads(&downloads, modified + STALE_DOWNLOADS); // already gone: nothing to say
+}
+
+#[test]
+fn update_the_start_up_sweep_only_looks_at_app_bundles() {
+    let (dir, _g) = scratch("sweep-start");
+    let downloads = dir.join("updates");
+    write(&downloads.join("x"), "x");
+    sweep_at_start(&InstallKind::Manual(ManualReason::NotInstalled), Some(downloads.clone()));
+    sweep_at_start(&InstallKind::WindowsInstalled, Some(downloads.clone()));
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(downloads.exists());
 }
 
 #[cfg(target_os = "macos")]

@@ -24,8 +24,10 @@ matter most are:
 
 ## Design facts a reviewer may want
 
-- No telemetry and no accounts. Network requests happen only when you start them (see
-  [architecture](docs/architecture.md#stack)).
+- No telemetry and no accounts. Network requests happen when you start them, plus the daily update check if you turn it on: at most
+  one successful check a day (a failed one is retried at most three times a day), two small downloads from github.com, the checksum
+  list and its signature. GitHub sees your IP address and that the request comes from `curl`; no cookies, no identifier, nothing about
+  your files (see [architecture](docs/architecture.md#stack)).
 - Passwords and passphrases for `ssh` are asked in the window through a private Unix socket and are never written to disk, the
   environment or process arguments ([remote.md](docs/remote.md#authentication-prompts)).
 - Until a folder is trusted: project settings cannot change `terminal.shell`, `lsp.servers` or schema associations, language
@@ -40,3 +42,21 @@ Ed25519 signature over that file. The in-app updater accepts nothing that this s
 `scripts/verify-release.sh <tag>`; the steps are in [docs/releasing.md](docs/releasing.md#verify-a-download). If you suspect the
 signing key is compromised, or find a release whose signature does not verify, report it privately as described above and do not
 install it.
+
+What the signature does not give you, and what is done about it:
+
+- **No expiry, no revocation.** A signature stays valid for ever. Anyone who can answer a client's requests (a hostile network, a
+  mirror, a proxy) can keep showing it an older, genuinely signed release (a freeze) or play an old list back (a rollback). The
+  updater never offers a version that is not newer than the running one, and it remembers the highest version a verified list has
+  offered on this installation and ignores lower ones afterwards. That only helps a client that has already seen the newer version:
+  one that has never been offered 0.4.0 cannot tell a replayed 0.2.0 list from the real latest. The remedy for a key that leaked, and
+  for old signed releases that should no longer be trusted, is a key rotation through a normal release
+  ([docs/releasing.md](docs/releasing.md#signing-and-the-update-key)); clients that missed it have to reinstall by hand.
+- **The installer is fetched from the tag of the verified version** (`releases/download/v<version>/`), not from `latest`, so a release
+  published between the two requests cannot be mixed with the list. Its hash is checked before it is opened and again before it is
+  installed.
+- **Gatekeeper.** An update installed by the app does not go through macOS's first-launch check, because `curl` does not set the
+  quarantine flag and Codeyard builds are not notarized yet. The protection is the signed checksum list, plus the check of the bundle
+  identifier, the version and `codesign --verify` before the app is replaced.
+- **Helper programs** (`curl`, `hdiutil`, `ditto`, `plutil`, `codesign`) are run from their system paths, never found through `PATH`
+  on macOS (on Windows the `curl.exe` of the system folder).

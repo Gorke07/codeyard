@@ -14,6 +14,8 @@ use std::time::{Duration, SystemTime};
 use gpui::App;
 
 use crate::update::{self, Asset, Downloaded, Progress, Release, RemoveOnDrop, UpdateError};
+#[cfg(test)]
+use crate::update_install::ManualReason;
 use crate::update_install::{self, InstallKind, InstallPlan};
 
 /// Everything the workbench needs from the world. The blocking methods run on a worker thread, never on the UI thread.
@@ -233,7 +235,7 @@ impl UpdateBackend for OfflineBackend {
     }
 
     fn install_kind(&self) -> InstallKind {
-        InstallKind::Manual
+        InstallKind::Manual(ManualReason::NotInstalled)
     }
 
     fn now(&self) -> SystemTime {

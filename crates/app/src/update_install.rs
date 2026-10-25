@@ -2,15 +2,20 @@
 //! Windows. Entry point: `stage_and_install`; what the UI does afterwards is `relaunch_command`.
 //!
 //! macOS in short: mount the disk image read-only -> copy `Codeyard.app` next to the installed app (same volume, so the
-//! last step is a rename) -> unmount -> check the copy -> `rename(installed, old)`, `rename(copy, installed)`, rolling
-//! back on any failure -> delete the old copy. The installed app is untouched until every check has passed.
+//! last step is a rename) -> unmount -> check the copy -> exchange the two atomically (`renamex_np(RENAME_SWAP)`; where the
+//! file system cannot, `rename(installed, old)` and `rename(copy, installed)`, rolled back on failure) -> delete the old copy.
+//! The installed app is untouched until every check has passed.
+//!
+//! Gatekeeper: the files are fetched by `curl`, which does not set the quarantine flag, so macOS does not run its first-launch
+//! check on an app installed this way (Codeyard builds are not notarized yet). What protects the user instead is the signed
+//! checksum list, the bundle identifier and version check and `codesign --verify`.
 
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::update::{Downloaded, RemoveOnDrop, UpdateError, io_err, private_dir, verify_file};
+use crate::update::{Downloaded, RemoveOnDrop, UpdateError, io_err, private_dir, system_tool, verify_file};
 
 const APP_NAME: &str = "Codeyard.app";
 
@@ -21,9 +26,23 @@ pub enum InstallKind {
     MacBundle { app: PathBuf },
     /// Installed by the Inno Setup installer: the new setup program upgrades it.
     WindowsInstalled,
-    /// Anything else (debug build, bare binary, Linux, read-only `/Applications`, portable zip): the UI opens the release
-    /// page and says that this copy cannot update itself.
-    Manual,
+    /// Anything else: the UI opens the release page and says why this copy cannot update itself.
+    Manual(ManualReason),
+}
+
+/// Why a copy of Codeyard is left to the user to update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManualReason {
+    /// A debug build must never replace itself or be replaced by a release.
+    DevelopmentBuild,
+    /// Not run from an app bundle (a bare binary, `cargo run`), or the executable's own path is unknown.
+    NotInstalled,
+    /// An app bundle in a folder this account cannot write to (an administrator's `/Applications`, a read-only volume).
+    ReadOnlyFolder(PathBuf),
+    /// Windows, but not installed by the setup program: the portable ZIP.
+    Portable,
+    /// No installer exists for this system (Linux, Intel Macs).
+    OtherSystem,
 }
 
 /// What `stage_and_install` did; pass it to `relaunch_command`.
@@ -36,18 +55,29 @@ pub enum InstallPlan {
 }
 
 pub fn install_kind() -> InstallKind {
-    // A debug build must never replace itself or be replaced by a release.
     if cfg!(debug_assertions) {
-        return InstallKind::Manual;
+        return InstallKind::Manual(ManualReason::DevelopmentBuild);
     }
-    let Ok(exe) = std::env::current_exe().and_then(std::fs::canonicalize) else { return InstallKind::Manual };
-    if cfg!(target_os = "macos") {
-        mac_bundle(&exe).filter(|app| app.parent().is_some_and(dir_writable)).map_or(InstallKind::Manual, |app| InstallKind::MacBundle { app })
-    } else if cfg!(windows) && exe.with_file_name("unins000.exe").is_file() {
-        InstallKind::WindowsInstalled
-    } else {
-        InstallKind::Manual
+    let Ok(exe) = std::env::current_exe().and_then(std::fs::canonicalize) else { return InstallKind::Manual(ManualReason::NotInstalled) };
+    kind_for(&exe, cfg!(target_os = "macos"), cfg!(windows), &dir_writable)
+}
+
+/// `install_kind` for an executable path; the system and the writability test are parameters so that every outcome can be tested.
+fn kind_for(exe: &Path, macos: bool, windows: bool, writable: &dyn Fn(&Path) -> bool) -> InstallKind {
+    if macos {
+        return match mac_bundle(exe) {
+            None => InstallKind::Manual(ManualReason::NotInstalled),
+            Some(app) => match app.parent() {
+                Some(dir) if writable(dir) => InstallKind::MacBundle { app },
+                Some(dir) => InstallKind::Manual(ManualReason::ReadOnlyFolder(dir.to_path_buf())),
+                None => InstallKind::Manual(ManualReason::NotInstalled),
+            },
+        };
     }
+    if windows {
+        return if exe.with_file_name("unins000.exe").is_file() { InstallKind::WindowsInstalled } else { InstallKind::Manual(ManualReason::Portable) };
+    }
+    InstallKind::Manual(ManualReason::OtherSystem)
 }
 
 /// `<name>.app` for an executable at `<name>.app/Contents/MacOS/<exe>`.
@@ -81,7 +111,7 @@ pub fn stage_and_install(dl: &Downloaded, kind: &InstallKind) -> Result<InstallP
             installer_command(&dl.path).spawn().map_err(|e| UpdateError::Tool { tool: "installer", detail: e.to_string() })?;
             Ok(InstallPlan::WindowsInstaller)
         }
-        InstallKind::Manual => Err(UpdateError::ManualOnly),
+        InstallKind::Manual(_) => Err(UpdateError::ManualOnly),
     }
 }
 
@@ -146,7 +176,7 @@ fn run(tool: &'static str, cmd: &mut Command) -> Result<String, UpdateError> {
 
 /// A key of `<app>/Contents/Info.plist`; `None` when the file or the key is missing.
 fn plist_string(app: &Path, key: &str) -> Result<Option<String>, UpdateError> {
-    let out = Command::new("plutil")
+    let out = Command::new(system_tool("plutil"))
         .args(["-extract", key, "raw", "-o", "-"])
         .arg(app.join("Contents/Info.plist"))
         .stdin(Stdio::null())
@@ -167,7 +197,7 @@ impl Mount {
         let point = std::env::temp_dir().join(format!("codeyard-update-mnt-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
         private_dir(&point)?;
         let args = ["attach", "-nobrowse", "-readonly", "-noverify", "-noautoopen", "-mountpoint"];
-        if let Err(e) = run("hdiutil", Command::new("hdiutil").args(args).arg(&point).arg(dmg)) {
+        if let Err(e) = run("hdiutil", Command::new(system_tool("hdiutil")).args(args).arg(&point).arg(dmg)) {
             if let Err(e) = std::fs::remove_dir(&point) {
                 eprintln!("could not remove {}: {e}", point.display());
             }
@@ -183,7 +213,7 @@ impl Mount {
 impl Drop for Mount {
     fn drop(&mut self) {
         let detach = |force: bool| {
-            let mut c = Command::new("hdiutil");
+            let mut c = Command::new(system_tool("hdiutil"));
             c.arg("detach").arg(&self.point);
             if force {
                 c.arg("-force");
@@ -223,15 +253,57 @@ fn verify_staged(staged: &Path, bundle_id: &str, version: &str) -> Result<(), Up
     if v.as_deref() != Some(version) {
         return Err(mismatch("the version", version, v));
     }
-    run("codesign", Command::new("codesign").args(["--verify", "--deep", "--strict"]).arg(staged)).map(drop).map_err(|e| match e {
+    run("codesign", Command::new(system_tool("codesign")).args(["--verify", "--deep", "--strict"]).arg(staged)).map(drop).map_err(|e| match e {
         UpdateError::Tool { detail, .. } => UpdateError::CodesignFailed(detail),
         other => other,
     })
 }
 
-/// `installed -> old`, `staged -> installed`; if the second step fails the first is undone.
-/// `rename` is a parameter so that tests can fail either step.
-fn swap(app: &Path, staged: &Path, old: &Path, rename: &dyn Fn(&Path, &Path) -> io::Result<()>) -> Result<(), UpdateError> {
+/// Atomically exchanges two directories (`renamex_np` with `RENAME_SWAP`): at no moment is there no app at the installed path.
+/// Fails with `Unsupported` where the system or the file system cannot.
+#[cfg(target_os = "macos")]
+fn exchange(a: &Path, b: &Path) -> io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let c = |p: &Path| CString::new(p.as_os_str().as_bytes()).map_err(io::Error::other);
+    let (a, b) = (c(a)?, c(b)?);
+    // SAFETY: both pointers are valid NUL-terminated strings that outlive the call.
+    match unsafe { libc::renamex_np(a.as_ptr(), b.as_ptr(), libc::RENAME_SWAP) } {
+        0 => Ok(()),
+        _ => Err(io::Error::last_os_error()),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exchange(_: &Path, _: &Path) -> io::Result<()> {
+    Err(io::ErrorKind::Unsupported.into())
+}
+
+/// The ordinary ways of "this file system cannot exchange": nothing to report, the two-step replace follows.
+fn exchange_unsupported(e: &io::Error) -> bool {
+    #[cfg(unix)]
+    if matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOTSUP)) {
+        return true;
+    }
+    e.kind() == io::ErrorKind::Unsupported
+}
+
+/// Puts `staged` in place of `app` and returns where the previous version is now (to be deleted). First choice is one atomic
+/// exchange: the old app ends up at `staged`. If that fails (an older file system, or anything else: it changed nothing),
+/// `app -> old`, `staged -> app`, and if the second step fails the first is undone.
+/// `rename` and `exchange` are parameters so that tests can fail either way.
+fn swap(
+    app: &Path,
+    staged: &Path,
+    old: &Path,
+    rename: &dyn Fn(&Path, &Path) -> io::Result<()>,
+    exchange: &dyn Fn(&Path, &Path) -> io::Result<()>,
+) -> Result<PathBuf, UpdateError> {
+    match exchange(app, staged) {
+        Ok(()) => return Ok(staged.to_path_buf()),
+        Err(e) if exchange_unsupported(&e) => {}
+        Err(e) => eprintln!("could not exchange the app atomically, replacing it in two steps: {e}"),
+    }
     rename(app, old).map_err(io_err("move the installed app aside"))?;
     if let Err(e) = rename(staged, app) {
         return Err(match rename(old, app) {
@@ -239,7 +311,7 @@ fn swap(app: &Path, staged: &Path, old: &Path, rename: &dyn Fn(&Path, &Path) -> 
             Err(cause) => UpdateError::RollbackFailed { app: app.to_path_buf(), backup: old.to_path_buf(), cause },
         });
     }
-    Ok(())
+    Ok(old.to_path_buf())
 }
 
 pub(crate) fn install_mac(dmg: &Path, version: &str, app: &Path) -> Result<InstallPlan, UpdateError> {
@@ -248,8 +320,9 @@ pub(crate) fn install_mac(dmg: &Path, version: &str, app: &Path) -> Result<Insta
         return Err(UpdateError::NoWritePermission(parent.to_path_buf()));
     }
     let bundle_id = plist_string(app, "CFBundleIdentifier")?.ok_or_else(|| UpdateError::BundleMismatch("the installed app has no identifier".into()))?;
+    sweep_stale_copies(app);
     let pid = std::process::id();
-    let (staged, old) = (parent.join(format!(".Codeyard.update-{pid}.app")), parent.join(format!(".Codeyard.old-{pid}.app")));
+    let (staged, old) = (parent.join(format!("{STAGED_PREFIX}{pid}.app")), parent.join(format!("{OLD_PREFIX}{pid}.app")));
     remove_leftover(&staged)?;
     remove_leftover(&old)?;
     let staged_guard = RemoveOnDrop::new(staged.clone());
@@ -260,30 +333,129 @@ pub(crate) fn install_mac(dmg: &Path, version: &str, app: &Path) -> Result<Insta
         if !std::fs::symlink_metadata(&source).is_ok_and(|m| m.is_dir()) {
             return Err(UpdateError::BundleMismatch(format!("the disk image has no {APP_NAME}")));
         }
-        run("ditto", Command::new("ditto").arg(&source).arg(&staged))?;
+        run("ditto", Command::new(system_tool("ditto")).arg(&source).arg(&staged))?;
     } // unmounted here, before the checks
     verify_staged(&staged, &bundle_id, version)?;
-    swap(app, &staged, &old, &|a, b| std::fs::rename(a, b))?;
+    let previous = swap(app, &staged, &old, &|a, b| std::fs::rename(a, b), &exchange)?;
     staged_guard.keep();
     // The new app is in place; a failure from here on must not turn the update into an error.
-    if let Err(e) = std::fs::remove_dir_all(&old) {
-        eprintln!("could not remove the previous version at {}: {e}", old.display());
-    }
-    if let Err(e) = clear_quarantine(app) {
-        eprintln!("could not clear the quarantine flag of {}: {e}", app.display());
+    if let Err(e) = std::fs::remove_dir_all(&previous) {
+        eprintln!("could not remove the previous version at {}: {e}", previous.display());
     }
     Ok(InstallPlan::MacApp { app: app.to_path_buf() })
 }
 
-/// Gatekeeper would ask again on first launch if the new bundle carried the download flag.
-fn clear_quarantine(app: &Path) -> Result<(), UpdateError> {
-    const FLAG: &str = "com.apple.quarantine";
-    match run("xattr", Command::new("xattr").args(["-p", FLAG]).arg(app)) {
-        Err(UpdateError::Tool { detail, .. }) if detail.contains("No such xattr") => return Ok(()),
-        Err(e) => return Err(e),
-        Ok(_) => {}
+// --- Leftovers of earlier runs ---
+
+const STAGED_PREFIX: &str = ".Codeyard.update-";
+const OLD_PREFIX: &str = ".Codeyard.old-";
+const MOUNT_PREFIX: &str = "codeyard-update-mnt-";
+/// A download folder this old belongs to no running update (the transfer itself stops after 30 minutes).
+const STALE_DOWNLOADS: std::time::Duration = std::time::Duration::from_secs(2 * 60 * 60);
+
+/// Is a process with this id running? Not being allowed to signal it (`EPERM`) still means it exists.
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let Ok(pid) = libc::pid_t::try_from(pid) else { return true };
+        // SAFETY: signal 0 only checks that the process exists.
+        unsafe { libc::kill(pid, 0) == 0 || io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) }
     }
-    run("xattr", Command::new("xattr").args(["-dr", FLAG]).arg(app)).map(drop)
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
+/// The process id in `<prefix><pid>[-n][.app]`.
+fn pid_in_name(name: &str, prefix: &str) -> Option<u32> {
+    name.strip_prefix(prefix)?.split(['.', '-']).next()?.parse().ok()
+}
+
+/// Staging copies, backups and mount points that an update which crashed or was killed left behind. Whatever belongs to a live
+/// process is left alone. The backup is the user's only copy when the installed app is missing (`RollbackFailed`), so it is only
+/// deleted while the app is there.
+pub(crate) fn sweep_stale_copies(app: &Path) {
+    let Some(parent) = app.parent() else { return };
+    sweep_dir(parent, app.exists(), &std::env::temp_dir());
+}
+
+fn sweep_dir(parent: &Path, app_present: bool, temp: &Path) {
+    for (dir, prefix, wanted) in [(parent, STAGED_PREFIX, true), (parent, OLD_PREFIX, app_present), (temp, MOUNT_PREFIX, true)] {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for entry in entries.flatten() {
+            let (name, path) = (entry.file_name(), entry.path());
+            let Some(pid) = name.to_str().and_then(|n| pid_in_name(n, prefix)) else { continue };
+            if !wanted || pid_alive(pid) {
+                continue;
+            }
+            if prefix == MOUNT_PREFIX {
+                remove_mount_point(&path);
+            } else if let Err(e) = std::fs::remove_dir_all(&path) {
+                eprintln!("could not remove {}: {e}", path.display());
+            }
+        }
+    }
+}
+
+/// Detaches the image if it is still mounted there, then removes the (empty) folder. `remove_dir`, never `remove_dir_all`: if
+/// the detach did not work, what is inside is somebody's disk image.
+fn remove_mount_point(point: &Path) {
+    if is_mount_point(point)
+        && let Err(e) = run("hdiutil", Command::new(system_tool("hdiutil")).args(["detach", "-force"]).arg(point))
+    {
+        eprintln!("could not unmount {}: {e}", point.display());
+        return;
+    }
+    if let Err(e) = std::fs::remove_dir(point) {
+        eprintln!("could not remove {}: {e}", point.display());
+    }
+}
+
+/// A mount point lives on another device than the folder that contains it.
+fn is_mount_point(dir: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let dev = |p: &Path| std::fs::metadata(p).map(|m| m.dev());
+        matches!((dev(dir), dir.parent().map(dev)), (Ok(a), Some(Ok(b))) if a != b)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        false
+    }
+}
+
+/// At startup, on a macOS app bundle: the sweep above, plus a download folder that no update is using any more. Cheap, so it
+/// runs on a thread of its own and only logs.
+pub fn sweep_at_start(kind: &InstallKind, downloads: Option<PathBuf>) {
+    let InstallKind::MacBundle { app } = kind else { return };
+    let app = app.clone();
+    let spawned = std::thread::Builder::new().name("update-sweep".into()).spawn(move || {
+        sweep_stale_copies(&app);
+        if let Some(dir) = downloads {
+            sweep_downloads(&dir, std::time::SystemTime::now());
+        }
+    });
+    if let Err(e) = spawned {
+        eprintln!("could not start the clean-up of old update files: {e}");
+    }
+}
+
+fn sweep_downloads(dir: &Path, now: std::time::SystemTime) {
+    let age = std::fs::metadata(dir).and_then(|m| m.modified()).map(|t| now.duration_since(t).unwrap_or_default());
+    match age {
+        Ok(age) if age >= STALE_DOWNLOADS => {
+            if let Err(e) = std::fs::remove_dir_all(dir) {
+                eprintln!("could not remove {}: {e}", dir.display());
+            }
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => eprintln!("could not look at {}: {e}", dir.display()),
+    }
 }
 
 #[cfg(test)]

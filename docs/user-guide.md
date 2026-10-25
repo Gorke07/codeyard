@@ -353,10 +353,15 @@ Codeyard can tell you when a new version is out and install it for you. It never
 
 ![The update dialog, with made-up release notes for a version that does not exist](screenshots/update-available.png)
 
-**What is checked.** A check asks the project's GitHub releases for two small files: the checksum list `SHA256SUMS.txt` and its
-signature. Only when the list names a newer version does it also fetch the release notes. That is the whole request: no account, no
-identifier, nothing about you, your files or your machine beyond what any web request carries (your address and `curl` as the
-program). Nothing is sent to anyone else.
+**What is checked.** A check downloads two small files from the project's GitHub releases: the checksum list `SHA256SUMS.txt` and its
+signature. github.com answers each request with a redirect to GitHub's release download host (`release-assets.githubusercontent.com`).
+When the list names a newer version a third file follows, the release notes, and the installer when you choose to install. GitHub
+sees your IP address and that the request comes from `curl`. No cookies are kept, no account or identifier is in the address, and
+nothing about you, your files or your machine is sent beyond what any web request carries.
+
+**What it does not do.** Codeyard never installs anything without your confirmation, and an update that Codeyard installs does not go
+through macOS's first-launch check (Gatekeeper), because the files come from `curl` and Codeyard builds are not notarized yet. What
+protects you instead is the signed checksum list (see *How it is verified*).
 
 **When.** The setting `"update.check"` (your own `settings.jsonc` or the Settings page; a folder's `.codeyard/settings.jsonc` cannot
 set it) takes:
@@ -364,7 +369,7 @@ set it) takes:
 | Value | What happens |
 | --- | --- |
 | `ask` (default) | Nothing is checked. A few seconds after the first window opens, once, Codeyard asks whether to check daily. *Check Daily* and *Only When I Ask* write `daily` or `manual` for you; closing the question with Esc writes nothing and asks again after 30 days. |
-| `daily` | Looks when Codeyard starts and then at most once in 24 hours while it runs. A newer version shows one notice and an item at the right end of the status bar; a failed check is only logged to stderr. |
+| `daily` | Looks when Codeyard starts and then once in 24 hours while it runs (one successful check a day). If a check fails, for instance offline, it is tried again every three hours while Codeyard runs, but after three failed attempts in a day it waits for the next day. A newer version shows one notice and an item at the right end of the status bar; a failed check is only logged to stderr. |
 | `manual` | Only **Help ▸ Check for Updates…** (palette: *Help: Check for Updates…*; on macOS also under the *codeyard* menu) looks. |
 
 That command works whatever the setting says, and shows its errors. Debug builds and windows started with `--do` or `--panel` never
@@ -376,15 +381,24 @@ the restart like after any quit (hot exit; with `files.hotExit` off you are aske
 in the status bar. *Skip This Version* hides that version from the notice and the item for good; a manual check still offers it and a
 newer version is not skipped. *Release Page* opens the release on GitHub. Esc or *Hide* during a download closes the dialog and the
 download goes on ("Updating… 40%" in the status bar; click it to come back); *Cancel* stops it and removes the partial file. Quitting
-during a download cancels it; during the few seconds the app is being replaced you are asked before quitting.
+during a download cancels it; during the few seconds the app is being replaced (in any window) you are asked before quitting, and that
+window does not close. The notes are reached with Tab and scroll with the arrow keys, Page Up/Down, Home and End (a screen reader is
+given their text, the first 8 KB of it; Codeyard draws at most the first 64 KB of very long notes and points to GitHub for the rest).
+Closing the dialog of a failed update dismisses the failure and its red status bar item.
 
 **How it is verified.** The checksum list must carry a valid Ed25519 signature made with the key built into Codeyard before anything in
 it is read; the release notes and the installer must match their signed SHA-256 (the installer is hashed again right before it is
-mounted), and on macOS the new app must have the same identifier and a valid code signature before it replaces the old one by a rename that is undone on failure.
+mounted), and on macOS the new app must have the same identifier and a valid code signature before it replaces the old one (an atomic
+exchange; where the file system cannot do that, two renames that are undone on failure). A release without a signature, like v0.1.0, is
+refused with "this release isn't signed". The signature has no expiry: whoever controls a connection can show it an older signed
+release, and Codeyard cannot tell that apart from the truth the first time. It does remember the highest version it has been offered
+and ignores an older list afterwards (see [SECURITY.md](../SECURITY.md#updates-and-signatures)).
 If a check fails, nothing was installed: the dialog says so and offers the release page (details: [architecture.md](architecture.md#updates)).
+Leftovers of an update that was interrupted (`.Codeyard.update-*`, `.Codeyard.old-*` next to the app, old downloads) are cleaned up at the next start.
 
 **Copies that cannot update themselves.** A debug build, a bare binary, Linux, the Windows portable ZIP and a macOS app in a folder you
-cannot write to (an administrator's `/Applications`) show *Download Page* instead of *Install and Restart*, with the reason.
+cannot write to (an administrator's `/Applications`) show *Download Page* instead of *Install and Restart*, and say which of these it is.
+A release that has no installer for your system (a Windows-only release on a Mac, say) is offered the same way.
 Windows installations made by the setup program run the installer silently and restart.
 
 ## Themes

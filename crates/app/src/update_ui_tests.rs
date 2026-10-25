@@ -14,7 +14,7 @@ use crate::qa_integration_tests::wait_ticking;
 use crate::qa_workbench_tests::{fresh, open, open_in, project, setup, setup_persistent, setup_with_config};
 use crate::update::{Asset, Downloaded, Progress, Release, UpdateError};
 use crate::update_backend::UpdateBackend;
-use crate::update_install::{InstallKind, InstallPlan};
+use crate::update_install::{InstallKind, InstallPlan, ManualReason};
 use crate::workbench::Workbench;
 
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -226,6 +226,10 @@ fn focused_button(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> Option<
     cx.update(|window, cx| wb.read(cx).focused_update_button_for_test(window, cx))
 }
 
+fn notes_focused(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> bool {
+    cx.update(|window, cx| wb.read(cx).notes_focused_for_test(window))
+}
+
 fn notice(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> Option<(bool, String)> {
     wb.read_with(cx, |wb, _| wb.notice_for_test())
 }
@@ -279,13 +283,13 @@ fn an_available_release_shows_its_notes_and_the_four_choices(cx: &mut TestAppCon
     assert_eq!((d.title.as_str(), d.subtitle.as_deref()), ("Codeyard 0.2.0 is available", Some("You have 0.1.0")));
     assert_eq!(d.buttons, ["Skip This Version", "Release Page", "Later", "Install and Restart"]);
     assert_eq!(d.primary.as_deref(), Some("Install and Restart"));
-    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()), Some(("0.2.0".into(), "Codeyard 0.2.0 is available. Click for details.".into())));
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()), Some(("Update 0.2.0".into(), "Codeyard 0.2.0 is available. Click for details.".into())));
 }
 
 #[gpui::test]
 fn a_copy_that_cannot_update_itself_gets_a_download_page_button_and_the_reason(cx: &mut TestAppContext) {
     let (wb, cx, fake) = rig(cx);
-    *fake.kind.lock().unwrap() = InstallKind::Manual;
+    *fake.kind.lock().unwrap() = InstallKind::Manual(ManualReason::NotInstalled);
     offered(&wb, cx, &fake, "0.2.0");
     let d = dialog(&wb, cx).unwrap();
     assert_eq!(d.buttons, ["Skip This Version", "Later", "Download Page"]);
@@ -460,7 +464,7 @@ fn an_untrusted_download_installs_nothing_and_only_points_to_the_release_page(cx
 }
 
 #[gpui::test]
-fn an_install_error_says_so_and_keeps_a_status_item_after_the_dialog_closes(cx: &mut TestAppContext) {
+fn an_install_error_says_so_and_its_status_item_goes_when_the_dialog_is_closed(cx: &mut TestAppContext) {
     let (wb, cx, fake) = rig(cx);
     offered(&wb, cx, &fake, "0.2.0");
     fake.download_does(Download::Done);
@@ -471,8 +475,14 @@ fn an_install_error_says_so_and_keeps_a_status_item_after_the_dialog_closes(cx: 
     assert_eq!(d.title, "The update couldn't be installed");
     assert!(d.text.contains("cannot write to /Applications"), "{}", d.text);
     assert_eq!(fake.count("discard"), 1, "the downloaded file is not left behind");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).map(|s| s.0), Some("Update failed".into()), "while the error is on screen");
     press(&wb, cx, "Close");
-    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).map(|s| s.0), Some("Update failed".into()), "someone can still find out why");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()), None, "read and closed: the red item goes away");
+    assert_eq!(state(&wb, cx), "idle");
+    // …and a background check is not held back by the error that was dismissed: it finds the release again.
+    fake.check_returns(Ok(Some(release("0.2.0"))));
+    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+    wait_state(&wb, cx, "available 0.2.0");
 }
 
 #[gpui::test]
@@ -606,17 +616,17 @@ fn skipping_a_version_silences_background_paths_but_a_manual_check_still_offers_
     wait_ticking(cx, "second check", |_| fake.count("check") == 2);
     wait_state(&wb, cx, "idle");
     assert_eq!(notice(&wb, cx), Some((false, "x".into())), "no notice for a skipped version");
-    // A newer version is not skipped.
-    fake.check_returns(Ok(Some(release("0.3.0"))));
-    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
-    wait_state(&wb, cx, "available 0.3.0");
-    assert_eq!(notice(&wb, cx), Some((false, "Codeyard 0.3.0 is available.".into())));
     // The user asking offers the skipped one regardless.
-    wb.update(cx, |wb, _| wb.reset_update_for_test());
     fake.check_returns(Ok(Some(release("0.2.0"))));
     manual_check(&wb, cx);
     wait_state(&wb, cx, "available 0.2.0");
     assert_eq!(dialog(&wb, cx).unwrap().title, "Codeyard 0.2.0 is available");
+    // A newer version is not skipped.
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    fake.check_returns(Ok(Some(release("0.3.0"))));
+    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+    wait_state(&wb, cx, "available 0.3.0");
+    assert_eq!(notice(&wb, cx), Some((false, "Codeyard 0.3.0 is available.".into())));
 }
 
 // --- Later after installing ---
@@ -663,7 +673,12 @@ fn the_question_names_what_is_sent_and_has_two_buttons(cx: &mut TestAppContext) 
     assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
     let d = dialog(&wb, cx).expect("the question is on screen");
     assert_eq!(d.title, "Check for updates automatically?");
-    assert!(d.text.contains("github.com") && d.text.contains("checksum list") && d.text.contains("nothing about you or your files"), "{}", d.text);
+    assert!(
+        d.text.contains("github.com") && d.text.contains("two small files") && d.text.contains("IP address") && d.text.contains("nothing about your files"),
+        "{}",
+        d.text
+    );
+    assert!(!d.text.contains("all that is sent") && !d.text.contains("no tracking"), "no promise that is not true: {}", d.text);
     assert!(d.text.contains("update.check"), "it says where to change it: {}", d.text);
     assert_eq!((d.buttons, d.primary.as_deref()), (vec!["Only When I Ask".to_string(), "Check Daily".to_string()], Some("Check Daily")));
 }
@@ -729,7 +744,7 @@ fn esc_on_the_question_writes_nothing_and_snoozes_it_for_thirty_days(cx: &mut Te
 
 #[gpui::test]
 fn the_question_waits_for_a_quiet_moment_and_ignores_enter_just_after_it_appears(cx: &mut TestAppContext) {
-    let (wb, cx, _fake) = rig(cx);
+    let (wb, cx, fake) = rig(cx);
     // The window is in the background, or a picker is open (quick open, the palette…): not now.
     assert!(!wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(false, window, cx)));
     wb.update_in(cx, |wb, window, cx| wb.open_palette_for_test(window, cx));
@@ -737,6 +752,7 @@ fn the_question_waits_for_a_quiet_moment_and_ignores_enter_just_after_it_appears
     assert!(dialog(&wb, cx).is_none());
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
+    fake.advance(Duration::from_secs(4)); // the Esc was a key too: see the test for typing below
     assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
     // A key typed into the editor a moment before cannot answer it.
     cx.simulate_keystrokes("enter");
@@ -755,16 +771,19 @@ fn the_question_waits_for_a_quiet_moment_and_ignores_enter_just_after_it_appears
 fn tab_walks_the_buttons_and_enter_presses_the_focused_one(cx: &mut TestAppContext) {
     let (wb, cx, fake) = rig(cx);
     offered(&wb, cx, &fake, "0.2.0");
-    // Focus starts on the primary button; Tab wraps to the first, Enter on "Skip This Version" skips.
+    // Focus starts on the primary button; Tab goes to the release notes (before the buttons), then to "Skip This Version".
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    assert!(notes_focused(&wb, cx) && focused_button(&wb, cx).is_none(), "the notes come first in the tab order");
     cx.simulate_keystrokes("tab");
     cx.run_until_parked();
     assert_eq!(focused_button(&wb, cx).as_deref(), Some("Skip This Version"));
     cx.simulate_keystrokes("tab");
     cx.run_until_parked();
     assert_eq!(focused_button(&wb, cx).as_deref(), Some("Release Page"));
-    cx.simulate_keystrokes("shift-tab shift-tab");
+    cx.simulate_keystrokes("shift-tab shift-tab shift-tab");
     cx.run_until_parked();
-    assert_eq!(focused_button(&wb, cx).as_deref(), Some("Install and Restart"), "shift-tab wraps backwards");
+    assert_eq!(focused_button(&wb, cx).as_deref(), Some("Install and Restart"), "shift-tab wraps backwards over the notes");
     cx.simulate_keystrokes("shift-tab");
     cx.run_until_parked();
     assert_eq!(focused_button(&wb, cx).as_deref(), Some("Later"));
@@ -1029,4 +1048,365 @@ fn the_accessibility_tree_has_a_modal_dialog_with_progress_and_buttons(cx: &mut 
     // The status bar names the update too.
     assert!(snapshot.status.iter().any(|s| s == "Downloading Codeyard 0.2.0. Click for details."), "{:?}", snapshot.status);
     press(&wb, cx, "Cancel");
+}
+
+// --- Replays, retries and what a failure says ---
+
+#[gpui::test]
+fn a_list_older_than_one_seen_before_is_not_offered_but_equal_and_newer_ones_are(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.4.0");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.state_value_for_test("update.highest_seen")).as_deref(), Some("0.4.0"));
+    // Somebody plays an old, genuinely signed list back (the real latest is 0.4.0): not an upgrade, whoever asks.
+    press(&wb, cx, "Later");
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    fake.check_returns(Ok(Some(release("0.2.0"))));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "up-to-date");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.state_value_for_test("update.highest_seen")).as_deref(), Some("0.4.0"), "never lowered");
+    press(&wb, cx, "Close");
+    fake.check_returns(Ok(Some(release("0.3.0"))));
+    wb.update_in(cx, |wb, window, cx| wb.background_check_for_test(window, cx));
+    wait_ticking(cx, "the background check ran", |_| fake.count("check") == 3);
+    wait_state(&wb, cx, "idle");
+    assert_eq!(notice(&wb, cx).filter(|(_, m)| m.contains("is available")), None);
+    // The same version again, and a newer one, are fine.
+    fake.check_returns(Ok(Some(release("0.4.0"))));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "available 0.4.0");
+    press(&wb, cx, "Later");
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    fake.check_returns(Ok(Some(release("0.5.0"))));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "available 0.5.0");
+    assert_eq!(wb.read_with(cx, |wb, _| wb.state_value_for_test("update.highest_seen")).as_deref(), Some("0.5.0"));
+}
+
+#[gpui::test]
+fn after_failed_checks_the_daily_check_is_retried_three_times_a_day_at_most(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    set_policy(cx, crate::update::Policy::Daily);
+    let hours = |h: u64| Duration::from_secs(h * 3600);
+    let look = |cx: &mut VisualTestContext, expected_checks: usize| {
+        fake.check_returns(Err(network()));
+        wb.update_in(cx, |wb, window, cx| wb.check_if_due_for_test(window, cx));
+        if fake.count("check") < expected_checks {
+            wait_ticking(cx, "a check", |_| fake.count("check") == expected_checks);
+        }
+        std::thread::sleep(Duration::from_millis(60)); // a check that must not happen has no event to wait for
+        cx.run_until_parked();
+        assert_eq!(fake.count("check"), expected_checks, "after {:?}", fake.now());
+    };
+    // The app looks every three hours while it runs.
+    for (expected, hour) in [(1, 0), (2, 3), (3, 6), (3, 9), (3, 12), (3, 21)] {
+        fake.advance(hours(hour) - hours(fake_hours(&fake)));
+        look(cx, expected);
+    }
+    // 24 hours after the first failure the day is over.
+    fake.advance(hours(24 - 21));
+    look(cx, 4);
+}
+
+/// Hours between the epoch the fake clock starts at and now, so that the test above can step to absolute hours.
+fn fake_hours(fake: &Fake) -> u64 {
+    (fake.now.load(Ordering::SeqCst) - 1_800_000_000) / 3600
+}
+
+#[gpui::test]
+fn a_copy_that_cannot_update_itself_says_why(cx: &mut TestAppContext) {
+    let reasons = [
+        (ManualReason::DevelopmentBuild, "development build"),
+        (ManualReason::NotInstalled, "isn't installed as an app"),
+        (ManualReason::ReadOnlyFolder(PathBuf::from("/Applications")), "can't replace itself in /Applications: your account can't write there"),
+        (ManualReason::Portable, "portable version"),
+        (ManualReason::OtherSystem, "can't update itself on this system"),
+    ];
+    for (reason, text) in reasons {
+        let (wb, cx, fake) = rig(cx);
+        *fake.kind.lock().unwrap() = InstallKind::Manual(reason.clone());
+        offered(&wb, cx, &fake, "0.2.0");
+        let d = dialog(&wb, cx).unwrap();
+        assert!(d.text.contains(text), "{reason:?}: {}", d.text);
+        assert_eq!(d.primary.as_deref(), Some("Download Page"));
+        let others = d.text.matches("Download the new version").count() + d.text.matches("download the new version").count();
+        assert_eq!(others, 1, "one sentence, the right one: {}", d.text);
+    }
+}
+
+#[gpui::test]
+fn every_kind_of_failure_says_what_to_do_about_it(cx: &mut TestAppContext) {
+    // (the error of a manual check, title, words in the lead, buttons)
+    type Case = (UpdateError, &'static str, &'static str, &'static [&'static str]);
+    let cases: [Case; 4] = [
+        (UpdateError::Unsigned, "The update couldn't be verified", "isn't signed, so Codeyard can't verify it", &["Close", "Release Page"]),
+        (UpdateError::NoRelease, "Couldn't check for updates", "no release with a checksum list", &["Close", "Release Page"]),
+        (
+            UpdateError::Tls("curl: (60) SSL certificate problem".into()),
+            "Couldn't check for updates",
+            "date and time are right",
+            &["Release Page", "Close", "Try Again"],
+        ),
+        (
+            UpdateError::Http { file: "SHA256SUMS.txt".into(), status: 503 },
+            "Couldn't check for updates",
+            "couldn't reach the update server",
+            &["Release Page", "Close", "Try Again"],
+        ),
+    ];
+    for (error, title, lead, buttons) in cases {
+        let (wb, cx, fake) = rig(cx);
+        fake.check_returns(Err(error));
+        manual_check(&wb, cx);
+        wait_ticking(cx, "an error", |cx| state(&wb, cx).starts_with("error"));
+        let d = dialog(&wb, cx).unwrap();
+        assert_eq!((d.title.as_str(), d.buttons.as_slice()), (title, &buttons.iter().map(|b| b.to_string()).collect::<Vec<_>>()[..]), "{}", d.text);
+        assert!(d.text.contains(lead), "{}", d.text);
+    }
+}
+
+#[gpui::test]
+fn a_full_disk_can_be_retried_and_a_failed_rollback_says_where_the_old_app_is(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    fake.download_does(Download::Fail(UpdateError::NoSpace));
+    press(&wb, cx, "Install and Restart");
+    wait_state(&wb, cx, "error install");
+    let d = dialog(&wb, cx).unwrap();
+    assert!(d.text.contains("isn't enough free disk space") && d.buttons.contains(&"Try Again".to_string()), "{}", d.text);
+    fake.download_does(Download::Done);
+    fake.install_returns(Err(UpdateError::RollbackFailed {
+        app: PathBuf::from(APP),
+        backup: PathBuf::from("/Applications/.Codeyard.old-1.app"),
+        cause: io::Error::other("busy"),
+    }));
+    press(&wb, cx, "Try Again");
+    wait_state(&wb, cx, "error install");
+    let d = dialog(&wb, cx).unwrap();
+    assert!(d.text.contains("may be at /Applications/.Codeyard.old-1.app") && d.text.contains("move it back to /Applications/Codeyard.app"), "{}", d.text);
+    assert!(!d.text.contains("download it from the release page"), "the app is not as it was: {}", d.text);
+}
+
+// --- The question and typing ---
+
+#[gpui::test]
+fn the_question_waits_until_nobody_is_typing(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    cx.simulate_keystrokes("a");
+    cx.run_until_parked();
+    assert!(!wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)), "a key was just pressed");
+    assert!(dialog(&wb, cx).is_none());
+    fake.advance(Duration::from_secs(2));
+    assert!(!wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    cx.simulate_keystrokes("b");
+    fake.advance(Duration::from_secs(2));
+    assert!(!wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)), "the clock starts again at every key");
+    fake.advance(Duration::from_secs(2));
+    assert!(wb.update_in(cx, |wb, window, cx| wb.ask_update_policy_for_test(true, window, cx)));
+    assert!(dialog(&wb, cx).is_some());
+}
+
+// --- Release notes ---
+
+fn release_with_notes(notes: String) -> Release {
+    Release { notes, ..release("0.2.0") }
+}
+
+fn offered_notes(wb: &Entity<Workbench>, cx: &mut VisualTestContext, fake: &Fake, notes: String) {
+    fake.check_returns(Ok(Some(release_with_notes(notes))));
+    manual_check(wb, cx);
+    wait_state(wb, cx, "available 0.2.0");
+}
+
+fn dialog_node_description(wb: &Entity<Workbench>, cx: &mut VisualTestContext) -> String {
+    use accesskit::Role;
+    let snapshot = cx.update(|window, cx| wb.read(cx).a11y_snapshot(window, cx));
+    let tree = accesskit_consumer::Tree::new(snapshot.to_tree(), true);
+    let state = tree.state();
+    let dialog = state.root().children().find(|n| n.role() == Role::Dialog).expect("a dialog node");
+    dialog.description().unwrap_or_default()
+}
+
+#[gpui::test]
+fn screen_readers_get_the_release_notes_with_a_pointer_to_the_rest(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    offered(&wb, cx, &fake, "0.2.0");
+    let spoken = dialog_node_description(&wb, cx);
+    assert!(spoken.contains("What is new") && spoken.contains("Faster start") && spoken.contains("A link"), "{spoken}");
+    assert!(!spoken.contains("**") && !spoken.contains("]("), "text, not Markdown: {spoken}");
+    assert!(!spoken.contains("read the rest"), "short notes are given whole");
+    // Long notes: the first 8 KB and where to read on.
+    let long: String = (0..2000).map(|i| format!("- Change number {i} of the release\n")).collect();
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    offered_notes(&wb, cx, &fake, long);
+    let spoken = dialog_node_description(&wb, cx);
+    assert!(spoken.contains("Change number 0 of"), "{}", &spoken[..80.min(spoken.len())]);
+    assert!(!spoken.contains("Change number 1999 of"));
+    assert!(spoken.len() < 8 * 1024 + 200, "{} bytes", spoken.len());
+    let page = format!("{}/releases/tag/v0.2.0", env!("CARGO_PKG_REPOSITORY"));
+    assert!(spoken.ends_with(&format!("The release notes are longer: read the rest at {page}")), "{}", &spoken[spoken.len() - 120..]);
+}
+
+#[gpui::test]
+fn huge_release_notes_are_drawn_only_up_to_a_limit_and_say_so(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    // 256 KiB, the most the updater accepts, in the shape that makes the most blocks.
+    let huge = "x\n\n".repeat(256 * 1024 / 3);
+    offered_notes(&wb, cx, &fake, huge);
+    let (blocks, last) = wb.read_with(cx, |wb, _| wb.update_notes_for_test());
+    assert!(blocks <= 64 * 1024 / 3 + 2, "{blocks} blocks");
+    assert_eq!(last, "The release notes are longer: read the rest on GitHub.");
+    // A note just under the limit is shown whole, without the line.
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    offered_notes(&wb, cx, &fake, "y\n\n".repeat(64 * 1024 / 3 - 1));
+    let (blocks, last) = wb.read_with(cx, |wb, _| wb.update_notes_for_test());
+    assert_eq!((blocks, last.as_str()), (64 * 1024 / 3 - 1, "y"));
+}
+
+#[gpui::test]
+fn the_notes_can_be_read_with_the_keyboard(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    let notes: String = (0..80).map(|i| format!("Paragraph {i} of the notes.\n\n")).collect();
+    offered_notes(&wb, cx, &fake, notes);
+    cx.run_until_parked();
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    assert!(notes_focused(&wb, cx));
+    let scroll = |wb: &Entity<Workbench>, cx: &mut VisualTestContext| wb.read_with(cx, |wb, _| wb.notes_scroll_for_test());
+    let (top, max) = scroll(&wb, cx);
+    assert_eq!(top, 0.);
+    assert!(max > 100., "there is something to scroll: {max}");
+    for (keys, check) in [
+        ("down", Box::new(|y: f32, _: f32| y < 0.) as Box<dyn Fn(f32, f32) -> bool>),
+        ("pagedown", Box::new(|y, _| y < -100.)),
+        ("end", Box::new(|y, max| y == -max)),
+        ("pageup", Box::new(|y, max| y > -max)),
+        ("home", Box::new(|y, _| y == 0.)),
+        ("up", Box::new(|y, _| y == 0.)),
+    ] {
+        cx.simulate_keystrokes(keys);
+        cx.run_until_parked();
+        let (y, max) = scroll(&wb, cx);
+        assert!(check(y, max), "{keys}: offset {y} of {max}");
+    }
+    // Other keys are left alone, and the dialog is still there.
+    cx.simulate_keystrokes("x");
+    assert!(dialog(&wb, cx).is_some());
+}
+
+// --- More than one window ---
+
+fn two_windows(cx: &mut TestAppContext) -> (gpui::WindowHandle<Workbench>, gpui::WindowHandle<Workbench>, Arc<Fake>) {
+    crate::qa_workbench_tests::globals(cx);
+    let open_window = |cx: &mut TestAppContext| {
+        cx.update(|app| {
+            app.open_window(gpui::WindowOptions::default(), |window, cx| cx.new(|cx| Workbench::with_state(state::State::in_memory().ok(), None, window, cx)))
+                .expect("a window")
+        })
+    };
+    let (first, second) = (open_window(cx), open_window(cx));
+    let fake = Fake::new();
+    for w in [first, second] {
+        w.update(cx, |wb, window, cx| {
+            window.focus(&wb.focus_handle(cx));
+            wb.set_update_backend_for_test(fake.clone());
+        })
+        .unwrap();
+    }
+    (first, second, fake)
+}
+
+/// The first window is in the middle of replacing the app.
+fn installing_in_first(cx: &mut TestAppContext, first: gpui::WindowHandle<Workbench>, fake: &Fake) {
+    first
+        .update(cx, |wb, window, cx| {
+            fake.check_returns(Ok(Some(release("0.2.0"))));
+            wb.run_command_for_test("Help: Check for Updates…", window, cx);
+        })
+        .unwrap();
+    let wait = |cx: &mut TestAppContext, want: &str| {
+        let start = std::time::Instant::now();
+        while first.read_with(cx, |wb, _| wb.update_state_for_test()).unwrap() != want {
+            assert!(start.elapsed() < Duration::from_secs(10), "timeout: {want}");
+            cx.run_until_parked();
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    wait(cx, "available 0.2.0");
+    fake.download_does(Download::Done);
+    fake.hold_install.store(true, Ordering::SeqCst);
+    first.update(cx, |wb, window, cx| wb.press_update_button_for_test("Install and Restart", window, cx)).unwrap();
+    wait(cx, "installing 0.2.0");
+}
+
+#[gpui::test]
+fn quitting_asks_in_every_window_while_any_window_is_replacing_the_app(cx: &mut TestAppContext) {
+    let (first, second, fake) = two_windows(cx);
+    installing_in_first(cx, first, &fake);
+    // Cmd-Q in the OTHER window.
+    second.update(cx, |wb, window, cx| wb.confirm_quit(window, cx)).unwrap();
+    cx.run_until_parked();
+    let (title, _) = cx.pending_prompt().expect("the question, although this window is not the one installing");
+    assert_eq!(title, "Codeyard is still installing an update");
+    cx.simulate_prompt_answer("Keep Waiting");
+    cx.run_until_parked();
+    assert_eq!(fake.count("quit"), 0);
+    second.update(cx, |wb, window, cx| wb.confirm_quit(window, cx)).unwrap();
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Quit Anyway");
+    cx.run_until_parked();
+    assert_eq!(fake.count("quit"), 1);
+    fake.hold_install.store(false, Ordering::SeqCst);
+}
+
+#[gpui::test]
+fn the_window_that_is_installing_cannot_be_closed_and_the_others_can(cx: &mut TestAppContext) {
+    let (first, second, fake) = two_windows(cx);
+    installing_in_first(cx, first, &fake);
+    let held = second.update(cx, |wb, window, cx| wb.hold_close_for_install(window, cx)).unwrap();
+    assert!(!held, "a window with nothing to do with the install closes as usual");
+    let held = first.update(cx, |wb, window, cx| wb.hold_close_for_install(window, cx)).unwrap();
+    assert!(held, "this window will receive the result: it stays");
+    assert!(!cx.has_pending_prompt(), "not a quit: no question, a notice");
+    let notice = first.read_with(cx, |wb, _| wb.notice_for_test()).unwrap();
+    assert_eq!(notice, Some((false, "This window is installing an update. You can close it in a few seconds.".into())));
+    // It finishes, the version is recorded and the window may close.
+    fake.hold_install.store(false, Ordering::SeqCst);
+    let start = std::time::Instant::now();
+    while first.read_with(cx, |wb, _| wb.update_state_for_test()).unwrap() != "ready 0.2.0" {
+        assert!(start.elapsed() < Duration::from_secs(10), "timeout");
+        cx.run_until_parked();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(first.read_with(cx, |wb, _| wb.state_value_for_test("update.installed")).unwrap().as_deref(), Some("0.2.0"));
+    assert!(!first.update(cx, |wb, window, cx| wb.hold_close_for_install(window, cx)).unwrap());
+}
+
+#[gpui::test]
+fn the_reasons_failures_and_notes_line_are_turkish_too(cx: &mut TestAppContext) {
+    let (wb, cx, fake) = rig(cx);
+    let _tr = crate::i18n::LangGuard::set("tr");
+    *fake.kind.lock().unwrap() = InstallKind::Manual(ManualReason::ReadOnlyFolder(PathBuf::from("/Applications")));
+    fake.check_returns(Ok(Some(release_with_notes("x\n\n".repeat(40_000)))));
+    manual_check(&wb, cx);
+    wait_state(&wb, cx, "available 0.2.0");
+    let d = dialog(&wb, cx).unwrap();
+    assert!(d.text.contains("/Applications içinde kendini değiştiremez"), "{}", d.text);
+    assert_eq!(wb.read_with(cx, |wb, _| wb.update_status_for_test()).unwrap().0, "Güncelleme 0.2.0");
+    let (_, last) = wb.read_with(cx, |wb, _| wb.update_notes_for_test());
+    assert_eq!(last, "Sürüm notları daha uzun: devamını GitHub'da okuyun.");
+    press(&wb, cx, "Sonra");
+    wb.update(cx, |wb, _| wb.reset_update_for_test());
+    for (error, words) in [
+        (UpdateError::Unsigned, "imzalı olmadığı için"),
+        (UpdateError::NoRelease, "sağlama toplamı listesi olan bir sürüm yok"),
+        (UpdateError::Tls("x".into()), "ve saatinizin doğru"),
+        (UpdateError::NoSpace, "boş disk alanı"),
+    ] {
+        fake.check_returns(Err(error));
+        manual_check(&wb, cx);
+        wait_ticking(cx, "an error", |cx| state(&wb, cx).starts_with("error"));
+        let d = dialog(&wb, cx).unwrap();
+        assert!(d.text.contains(words), "{words}: {}", d.text);
+        press(&wb, cx, "Kapat");
+    }
 }

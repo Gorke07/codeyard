@@ -659,8 +659,8 @@ pub fn open_workbench_window(cx: &mut App) -> Option<gpui::WindowHandle<Workbenc
             let entity = cx.entity().downgrade();
             window.on_window_should_close(cx, move |window, cx| {
                 let Some(wb) = entity.upgrade() else { return true };
-                // Closing the last window ends the app: not in the middle of swapping a new version in.
-                if cx.windows().len() == 1 && wb.update(cx, |wb, cx| wb.hold_close_for_install(window, cx)) {
+                // Not in the middle of swapping a new version in: the last window would end the app, another one would lose the result.
+                if wb.update(cx, |wb, cx| wb.hold_close_for_install(window, cx)) {
                     return false;
                 }
                 // Hot exit: back up and close. If it's off and the buffer is dirty, ask.
@@ -747,6 +747,7 @@ fn main() {
                 }
                 if update_checks_enabled(&args) {
                     wb.schedule_update_checks(window, cx);
+                    update_install::sweep_at_start(&update_install::install_kind(), update::updates_dir().ok());
                 }
                 window.focus(&wb.focus_handle(cx));
                 cx.activate(true);

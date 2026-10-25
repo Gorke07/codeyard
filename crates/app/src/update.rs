@@ -2,14 +2,22 @@
 //! The installing half (swap the app bundle, run the Windows installer, relaunch) is in `update_install.rs`.
 //!
 //! What the network sees: `check` fetches two small files from `<repository>/releases/latest/download/`
-//! (`SHA256SUMS.txt` and its Ed25519 signature) and, only when a newer version is listed, `RELEASE_NOTES.md`.
-//! No GitHub API, no token, no rate limit. Nothing is requested unless the caller asks (the UI does so on the
-//! `update.check` policy, see `Policy`).
+//! (`SHA256SUMS.txt` and its Ed25519 signature) and, only when a newer version is listed, `RELEASE_NOTES.md`; the
+//! installer follows when the user agrees. github.com redirects each request to its release-asset servers. No GitHub
+//! API, no token, no rate limit. Nothing is requested unless the caller asks (the UI does so on the `update.check`
+//! policy, see `Policy`).
 //!
 //! Trust chain, in this order: signature over the exact bytes of `SHA256SUMS.txt` (checked BEFORE the file is parsed)
 //! -> hash of `RELEASE_NOTES.md` and of the installer from the signed list -> only then is anything opened or run.
 //! The version number is taken from the signed asset names, never from the transport, and is only offered when it is
-//! strictly newer than the running one.
+//! strictly newer than the running one. Once the list is verified, the notes and the installer are fetched from the
+//! tag of that version (`releases/download/v<version>/`), not from `latest`, so a release published in between cannot
+//! make them disagree with the list.
+//!
+//! What the signature does not give: it carries no date and cannot be revoked. Whoever can answer a client's requests
+//! can keep showing it an older, genuinely signed release (a freeze), and a client that never saw a newer one cannot
+//! tell a replay from the real latest. The UI remembers the highest version it has been offered (`is_rollback`); the
+//! rest is mitigated by rotating the key in a normal release (see SECURITY.md).
 //!
 //! Use from a background thread (everything here blocks):
 //! ```text
@@ -66,8 +74,14 @@ const NOTES_MAX: usize = 256 << 10;
 const INSTALLER_MAX: u64 = 400 << 20;
 const SMALL_TIMEOUT_SECS: &str = "30";
 const INSTALLER_TIMEOUT_SECS: &str = "1800";
+/// Stall detection: below `--speed-limit` bytes/s for `--speed-time` seconds ends the transfer (curl exit 28). The
+/// installer gets more patience than the small files, which are over in a moment or not at all.
+const SMALL_SPEED: [&str; 4] = ["--speed-limit", "1024", "--speed-time", "30"];
+const INSTALLER_SPEED: [&str; 4] = ["--speed-limit", "1024", "--speed-time", "60"];
 const POLL: Duration = Duration::from_millis(100);
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+/// While offline the app looks again every few hours; after this many failures within a day it stops until the day is over.
+const FAILED_CHECKS_PER_DAY: usize = 3;
 
 /// File name suffix of the installer this build downloads (`Codeyard-<version>-<suffix>`); `None` where we ship none.
 const PLATFORM_SUFFIX: Option<&str> = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
@@ -77,6 +91,9 @@ const PLATFORM_SUFFIX: Option<&str> = if cfg!(all(target_os = "macos", target_ar
 } else {
     None
 };
+
+/// The installers (what `Asset` can point to); a signed list without any of them is not a release of ours.
+const INSTALLER_SUFFIXES: [&str; 2] = ["macos-arm64.dmg", "windows-x64-setup.exe"];
 
 /// Every asset name that carries the version, used to read the version out of the signed list.
 const VERSIONED_SUFFIXES: [&str; 4] = ["macos-arm64.dmg", "macos-arm64.tar.gz", "windows-x64-setup.exe", "windows-x64.zip"];
@@ -157,6 +174,26 @@ pub fn should_check_now(last_check: Option<SystemTime>, now: SystemTime, policy:
     policy == Policy::Daily && last_check.is_none_or(|t| now.duration_since(t).map_or(true, |age| age >= DAY))
 }
 
+/// A failed check does not count as a check, so `should_check_now` would say yes at every look (every few hours while the app
+/// runs). This caps the retries: at most `FAILED_CHECKS_PER_DAY` failures within the last 24 hours (a time in the future counts).
+pub fn retry_allowed(failures: &[SystemTime], now: SystemTime) -> bool {
+    failures.iter().filter(|t| now.duration_since(**t).map_or(true, |age| age < DAY)).count() < FAILED_CHECKS_PER_DAY
+}
+
+/// Is `offered` older than `highest_seen`, the highest version a verified list ever offered this installation? A replayed old
+/// list is genuinely signed, so only this memory tells it from the real latest. An unparsable version is never "older".
+pub fn is_rollback(offered: &str, highest_seen: &str) -> bool {
+    matches!((Version::parse(offered), Version::parse(highest_seen)), (Ok(o), Ok(h)) if o < h)
+}
+
+/// The larger of two versions as text (`a` when `b` does not parse), for remembering the highest one seen.
+pub fn higher_version(a: &str, b: Option<&str>) -> String {
+    match (Version::parse(a), b.map(Version::parse)) {
+        (Ok(x), Some(Ok(y))) if y > x => y.to_string(),
+        _ => a.to_string(),
+    }
+}
+
 // --- Errors ---
 
 /// What the UI can do about an error.
@@ -164,6 +201,8 @@ pub fn should_check_now(last_check: Option<SystemTime>, now: SystemTime, policy:
 pub enum ErrorKind {
     /// Offline, server trouble, a timeout: offer "try again".
     Network,
+    /// The server answered, but there is no release with a checksum list to look at. Retrying will not help.
+    NoRelease,
     /// The files did not pass verification. Nothing was installed; do not retry blindly, point to the release page.
     Untrusted,
     /// Verified, but this installation cannot be updated automatically: point to the release page.
@@ -174,12 +213,23 @@ pub enum ErrorKind {
 #[derive(Debug)]
 pub enum UpdateError {
     Network(String),
+    /// The server answered with an HTTP error (other than "not there", which the callers interpret).
+    Http {
+        file: String,
+        status: u16,
+    },
+    /// The secure connection could not be set up: certificates, protocol versions, a wrong clock or a proxy in the way.
+    Tls(String),
     /// A helper program (curl, hdiutil, ditto, plutil, xattr, the installer) could not be run or failed.
     Tool {
         tool: &'static str,
         detail: String,
     },
     BadSignature,
+    /// The release has a checksum list but no signature for it (`SHA256SUMS.txt.sig` answers 404).
+    Unsigned,
+    /// The repository has no release with a `SHA256SUMS.txt` (`latest/download` answers 404).
+    NoRelease,
     BadSums(String),
     BadVersion(String),
     /// The signed list does not mention a file we need.
@@ -195,6 +245,8 @@ pub enum UpdateError {
         current: String,
     },
     NoInstaller,
+    /// curl could not write the download (exit 23): the disk is full or the quota is used up.
+    NoSpace,
     /// `InstallKind::Manual`: nothing to install automatically.
     ManualOnly,
     NoWritePermission(PathBuf),
@@ -218,12 +270,14 @@ impl UpdateError {
     pub fn kind(&self) -> ErrorKind {
         use UpdateError::*;
         match self {
-            Network(_) => ErrorKind::Network,
-            BadSignature | BadSums(_) | BadVersion(_) | MissingEntry(_) | NotText(_) | HashMismatch(_) | TooLarge { .. } | NotNewer { .. } => {
+            Network(_) | Http { .. } | Tls(_) => ErrorKind::Network,
+            NoRelease => ErrorKind::NoRelease,
+            BadSignature | Unsigned | BadSums(_) | BadVersion(_) | MissingEntry(_) | NotText(_) | HashMismatch(_) | TooLarge { .. } | NotNewer { .. } => {
                 ErrorKind::Untrusted
             }
             Tool { .. }
             | NoInstaller
+            | NoSpace
             | ManualOnly
             | NoWritePermission(_)
             | BundleMismatch(_)
@@ -241,16 +295,23 @@ impl fmt::Display for UpdateError {
         use UpdateError::*;
         match self {
             Network(e) => write!(f, "Could not reach the update server: {e}"),
+            Http { file, status } => write!(f, "The update server answered {status} for {file}."),
+            Tls(e) => write!(f, "Could not set up a secure connection to the update server: {e}"),
             Tool { tool, detail } => write!(f, "The helper program “{tool}” failed: {detail}"),
             BadSignature => f.write_str("The list of release files is not signed by Codeyard. Nothing was downloaded or installed."),
+            Unsigned => {
+                f.write_str("This release isn't signed (there is no SHA256SUMS.txt.sig), so Codeyard will not use it. Nothing was downloaded or installed.")
+            }
+            NoRelease => f.write_str("GitHub has no release with a checksum list (SHA256SUMS.txt) to look at."),
             BadSums(e) => write!(f, "The list of release files is malformed: {e}"),
             BadVersion(v) => write!(f, "The release has an unusable version number: {v}"),
             MissingEntry(n) => write!(f, "The signed release list does not contain {n}."),
             NotText(n) => write!(f, "{n} is not valid text."),
             HashMismatch(n) => write!(f, "{n} does not match its signed checksum, so it was discarded."),
-            TooLarge { file, limit } => write!(f, "{file} is larger than the allowed {} MB and was refused.", limit.div_ceil(1 << 20)),
+            TooLarge { file, limit } => write!(f, "{file} is larger than the allowed {} and was refused.", size_limit(*limit)),
             NotNewer { offered, current } => write!(f, "Version {offered} is not newer than the running version {current}."),
             NoInstaller => f.write_str("There is no installer for this system in the release."),
+            NoSpace => f.write_str("There is not enough disk space to download the update."),
             ManualOnly => f.write_str("This copy of Codeyard cannot update itself; download the new version from the release page."),
             NoWritePermission(d) => write!(f, "Codeyard cannot write to {}, so it cannot replace itself there.", d.display()),
             BundleMismatch(e) => write!(f, "The downloaded app is not the expected one: {e}"),
@@ -279,6 +340,15 @@ impl std::error::Error for UpdateError {
     }
 }
 
+/// "64 bytes", "64 KB", "400 MB": the limit a file exceeded, in the unit that makes sense for it.
+fn size_limit(bytes: u64) -> String {
+    match bytes {
+        b if b >= 1 << 20 => format!("{} MB", b.div_ceil(1 << 20)),
+        b if b >= 1 << 10 => format!("{} KB", b.div_ceil(1 << 10)),
+        b => format!("{b} bytes"),
+    }
+}
+
 pub(crate) fn io_err(what: &'static str) -> impl FnOnce(io::Error) -> UpdateError {
     move |source| UpdateError::Io { what, source }
 }
@@ -287,7 +357,11 @@ pub(crate) fn io_err(what: &'static str) -> impl FnOnce(io::Error) -> UpdateErro
 
 /// Where to fetch from and whom to trust. Built from the environment in the public functions; tests build their own.
 pub(crate) struct Config {
+    /// Where the signed list and its signature come from (`.../releases/latest/download`).
     base: String,
+    /// Where the files of one verified release come from: `<pin>/v<version>/<name>`. `None` (a local mirror or a test server): `base`.
+    pin: Option<String>,
+    curl: PathBuf,
     keys: Vec<[u8; 32]>,
     suffix: Option<&'static str>,
     /// Plain `http://` and `file://` allowed: only when the base URL was overridden by the caller or the environment.
@@ -305,18 +379,53 @@ impl Config {
 
     fn new(base_override: Option<String>) -> Self {
         let local = base_override.is_some();
-        let base = base_override.unwrap_or_else(|| format!("{}/releases/latest/download", env!("CARGO_PKG_REPOSITORY")));
-        Config { base: base.trim_end_matches('/').to_string(), keys: TRUSTED_KEYS.to_vec(), suffix: PLATFORM_SUFFIX, local, installer_max: INSTALLER_MAX }
+        let repository = env!("CARGO_PKG_REPOSITORY");
+        let base = base_override.unwrap_or_else(|| format!("{repository}/releases/latest/download"));
+        Config {
+            base: base.trim_end_matches('/').to_string(),
+            pin: (!local).then(|| format!("{repository}/releases/download")),
+            curl: system_tool("curl"),
+            keys: TRUSTED_KEYS.to_vec(),
+            suffix: PLATFORM_SUFFIX,
+            local,
+            installer_max: INSTALLER_MAX,
+        }
     }
 
+    /// A file of the release that `latest` pointed to when the list was fetched.
     fn url(&self, name: &str) -> String {
         format!("{}/{name}", self.base)
     }
+
+    /// A file of the release whose list was verified: pinned to its tag, so a release published since cannot slip in.
+    fn release_url(&self, version: Version, name: &str) -> String {
+        match &self.pin {
+            Some(pin) => format!("{pin}/v{version}/{name}"),
+            None => self.url(name),
+        }
+    }
+}
+
+/// A helper program by absolute path. A lookup through `PATH` would run whatever a user-writable folder in front of the system
+/// ones holds, with our privileges and our network. macOS never uses `PATH`; Windows takes the `curl.exe` that ships with the system
+/// and falls back to `PATH` only on an old Windows that lacks it; elsewhere (development) it is `PATH`.
+pub(crate) fn system_tool(name: &str) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        return Path::new("/usr/bin").join(name);
+    }
+    #[cfg(windows)]
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        let exe = PathBuf::from(root).join("System32").join(format!("{name}.exe"));
+        if exe.is_file() {
+            return exe;
+        }
+    }
+    PathBuf::from(name)
 }
 
 /// The base `curl` command. Arguments are separate argv items, never a shell string. `-q` first: ignore `~/.curlrc`.
 fn curl(cfg: &Config) -> Command {
-    let mut c = Command::new("curl");
+    let mut c = Command::new(&cfg.curl);
     c.args(["-q", "--fail", "--silent", "--show-error", "--location", "--max-redirs", "5", "--connect-timeout", "15", "--tlsv1.2"]);
     let (protos, redir) = if cfg.local { ("=https,http,file", "=https,http") } else { ("=https", "=https") };
     c.args(["--proto", protos, "--proto-redir", redir]);
@@ -349,11 +458,39 @@ fn stderr_text(raw: &[u8]) -> String {
     String::from_utf8_lossy(raw).trim().to_string()
 }
 
+/// What a failed curl run means. curl 8 on macOS ends a `--fail` HTTP error with exit 56 over HTTP/2 and 22 over HTTP/1, so
+/// the status is read from the message (`... returned error: 404`) and the exit status is only the fallback.
+fn curl_error(exit: Option<i32>, stderr: &str, file: &str) -> UpdateError {
+    let status = stderr.split_once("returned error: ").and_then(|(_, rest)| rest.get(..3)?.parse::<u16>().ok());
+    let detail = match stderr.trim() {
+        "" => format!("curl exited with status {}", exit.map_or("?".into(), |c| c.to_string())),
+        text => text.to_string(),
+    };
+    match (status, exit) {
+        (Some(status), _) => UpdateError::Http { file: file.to_string(), status },
+        (_, Some(23)) => UpdateError::NoSpace,
+        // 35 handshake, 51/60 peer certificate, 58/59/77 local certificates and CA file, 83 issuer check.
+        (_, Some(35 | 51 | 58 | 59 | 60 | 77 | 83)) => UpdateError::Tls(detail),
+        _ => UpdateError::Network(detail),
+    }
+}
+
+impl UpdateError {
+    /// "Not there" (404, 410) becomes `instead`; everything else is passed on. For files whose absence has a meaning of its own.
+    fn if_missing(self, instead: UpdateError) -> UpdateError {
+        match self {
+            UpdateError::Http { status: 404 | 410, .. } => instead,
+            other => other,
+        }
+    }
+}
+
 /// A small file, read through a bounded pipe: a hostile server cannot make us buffer more than `limit` bytes.
-fn fetch(cfg: &Config, name: &str, limit: usize) -> Result<Vec<u8>, UpdateError> {
+fn fetch(cfg: &Config, url: &str, name: &str, limit: usize) -> Result<Vec<u8>, UpdateError> {
     let mut child = curl(cfg)
-        .args(["--max-time", SMALL_TIMEOUT_SECS, "--url"])
-        .arg(cfg.url(name))
+        .args(["--max-time", SMALL_TIMEOUT_SECS])
+        .args(SMALL_SPEED)
+        .args(["--url", url])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -373,7 +510,7 @@ fn fetch(cfg: &Config, name: &str, limit: usize) -> Result<Vec<u8>, UpdateError>
     }
     let out = child.wait_with_output().map_err(tool_err("curl"))?;
     if !out.status.success() {
-        return Err(UpdateError::Network(stderr_text(&out.stderr)));
+        return Err(curl_error(out.status.code(), &stderr_text(&out.stderr), name));
     }
     Ok(body)
 }
@@ -436,32 +573,44 @@ pub(crate) fn verify_file(path: &Path, sha256: &str, name: &str) -> Result<(), U
     (got == sha256).then_some(()).ok_or_else(|| UpdateError::HashMismatch(name.to_string()))
 }
 
-/// The parsed, already signature-checked `SHA256SUMS.txt`: `<64 hex>  <file name>` per line.
+/// The parsed, already signature-checked `SHA256SUMS.txt`: `<64 lowercase hex>  <file name>` per line, LF line ends, names of
+/// `[A-Za-z0-9._-]`. `scripts/verify-release.sh` applies the same rules, so that a release it accepts is one this accepts.
 struct Sums(Vec<(String, String)>);
 
 impl Sums {
     fn parse(raw: &[u8]) -> Result<Self, UpdateError> {
         let text = std::str::from_utf8(raw).map_err(|_| UpdateError::NotText(SUMS.into()))?;
         let mut entries: Vec<(String, String)> = Vec::new();
-        for (i, line) in text.lines().enumerate().filter(|(_, l)| !l.is_empty()) {
+        // `split`, not `lines`: a CR at the end of a line must fail the name check, not be dropped quietly.
+        for (i, line) in text.split('\n').enumerate().filter(|(_, l)| !l.is_empty()) {
             let bad = |why: &str| UpdateError::BadSums(format!("line {}: {why}", i + 1));
             let (hash, name) = line.split_once("  ").ok_or_else(|| bad("expected “<sha256>  <name>”"))?;
-            if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err(bad("not a SHA-256"));
+            if hash.len() != 64 || !hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+                return Err(bad("not a lower-case SHA-256"));
             }
-            if name.is_empty() || name.contains(['/', '\\']) || name.chars().any(char::is_control) {
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) {
                 return Err(bad("unusable file name"));
             }
             if entries.iter().any(|(n, _)| n == name) {
                 return Err(bad("listed twice"));
             }
-            entries.push((name.to_string(), hash.to_ascii_lowercase()));
+            entries.push((name.to_string(), hash.to_string()));
         }
         Ok(Sums(entries))
     }
 
+    fn find(&self, name: &str) -> Option<&str> {
+        self.0.iter().find(|(n, _)| n == name).map(|(_, h)| h.as_str())
+    }
+
     fn get(&self, name: &str) -> Result<&str, UpdateError> {
-        self.0.iter().find(|(n, _)| n == name).map(|(_, h)| h.as_str()).ok_or_else(|| UpdateError::MissingEntry(name.to_string()))
+        self.find(name).ok_or_else(|| UpdateError::MissingEntry(name.to_string()))
+    }
+
+    /// A list that names no installer of any platform is not a release of ours, however well it is signed.
+    fn require_an_installer(&self, version: Version) -> Result<(), UpdateError> {
+        let any = INSTALLER_SUFFIXES.iter().any(|s| self.find(&format!("Codeyard-{version}-{s}")).is_some());
+        any.then_some(()).ok_or_else(|| UpdateError::MissingEntry(format!("an installer (Codeyard-{version}-{})", INSTALLER_SUFFIXES.join(" or "))))
     }
 
     fn check(&self, name: &str, data: &[u8]) -> Result<(), UpdateError> {
@@ -499,8 +648,9 @@ pub fn check(current: &str) -> Result<Option<Release>, UpdateError> {
 
 pub(crate) fn check_with(cfg: &Config, current: &str) -> Result<Option<Release>, UpdateError> {
     let current = Version::parse(current)?;
-    let sums_raw = fetch(cfg, SUMS, SUMS_MAX)?;
-    let signature = fetch(cfg, SIG, SIG_LEN)?;
+    // The list's absence means there is nothing to compare with; the signature's absence means the release was never signed.
+    let sums_raw = fetch(cfg, &cfg.url(SUMS), SUMS, SUMS_MAX).map_err(|e| e.if_missing(UpdateError::NoRelease))?;
+    let signature = fetch(cfg, &cfg.url(SIG), SIG, SIG_LEN).map_err(|e| e.if_missing(UpdateError::Unsigned))?;
     // Nothing in the list is looked at before the signature is known to be good.
     verify_signature(&cfg.keys, &sums_raw, &signature)?;
     let sums = Sums::parse(&sums_raw)?;
@@ -508,16 +658,16 @@ pub(crate) fn check_with(cfg: &Config, current: &str) -> Result<Option<Release>,
     if version <= current {
         return Ok(None);
     }
-    let notes_raw = fetch(cfg, NOTES, NOTES_MAX)?;
+    sums.require_an_installer(version)?;
+    let notes_raw = fetch(cfg, &cfg.release_url(version, NOTES), NOTES, NOTES_MAX)?;
     sums.check(NOTES, &notes_raw)?;
     let notes = String::from_utf8(notes_raw).map_err(|_| UpdateError::NotText(NOTES.into()))?;
-    let asset = cfg
-        .suffix
-        .map(|suffix| {
-            let name = format!("Codeyard-{version}-{suffix}");
-            Ok::<_, UpdateError>(Asset { sha256: sums.get(&name)?.to_string(), url: cfg.url(&name), name })
-        })
-        .transpose()?;
+    // A release that carries no installer for this system (a Windows-only or a Mac-only one) is still a release: the UI
+    // points to its page.
+    let asset = cfg.suffix.and_then(|suffix| {
+        let name = format!("Codeyard-{version}-{suffix}");
+        sums.find(&name).map(|sha256| Asset { sha256: sha256.to_string(), url: cfg.release_url(version, &name), name })
+    });
     Ok(Some(Release { version: version.to_string(), notes, asset }))
 }
 
@@ -560,8 +710,8 @@ impl Drop for RemoveOnDrop {
     }
 }
 
-#[cfg_attr(test, allow(dead_code, reason = "only the real backend calls it; tests use fakes or `check_with`"))]
-fn updates_dir() -> Result<PathBuf, UpdateError> {
+/// Where installers are downloaded to: a folder of its own in the state directory.
+pub(crate) fn updates_dir() -> Result<PathBuf, UpdateError> {
     let state = crate::workbench::state_path().and_then(|p| p.parent().map(Path::to_path_buf));
     state.map(|d| d.join("updates")).ok_or_else(|| UpdateError::Io { what: "find the state folder", source: io::ErrorKind::NotFound.into() })
 }
@@ -596,7 +746,9 @@ pub(crate) fn download_in(
     let (dest, headers) = (dir.join(&asset.name), dir.join("headers.txt"));
 
     let mut child = curl(cfg)
-        .args(["--max-time", INSTALLER_TIMEOUT_SECS, "--max-filesize"])
+        .args(["--max-time", INSTALLER_TIMEOUT_SECS])
+        .args(INSTALLER_SPEED)
+        .arg("--max-filesize")
         .arg(cfg.installer_max.to_string())
         .arg("--dump-header")
         .arg(&headers)
@@ -634,7 +786,7 @@ pub(crate) fn download_in(
             e.take(4096).read_to_string(&mut msg).map_err(io_err("read curl's error message"))?;
         }
         // curl exit 63: "Maximum file size exceeded".
-        return Err(if status.code() == Some(63) { too_large() } else { UpdateError::Network(msg.trim().to_string()) });
+        return Err(if status.code() == Some(63) { too_large() } else { curl_error(status.code(), &msg, &asset.name) });
     }
     verify_file(&dest, &asset.sha256, &asset.name)?;
     let size = std::fs::metadata(&dest).map_err(io_err("read the downloaded file"))?.len();

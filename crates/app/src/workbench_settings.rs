@@ -121,7 +121,7 @@ pub const CATALOG: &[Entry] = &[
     e(
         "update.check",
         crate::i18n::tr(
-            "Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (asks github.com once a day whether a newer release exists; only the request is sent, nothing about you) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it",
+            "Look for new Codeyard versions: ask (not decided yet; nothing is checked), daily (once a day, downloads two small files from github.com, the checksum list of the latest release and its signature; GitHub sees your IP address and that the request comes from curl, nothing about your files) or manual (only when you choose Check for Updates). Your own settings only; a folder cannot change it",
         ),
         Kind::Choice(&["ask", "daily", "manual"]),
     ),

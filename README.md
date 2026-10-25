@@ -32,9 +32,11 @@ What it is not:
 
 - **No extensions.** There is no extension API and no store. Features that people usually install an extension for (schema
   validation, spell check, a merge editor, `.http` requests, a debugger client) are built in.
-- **No telemetry, no account.** The only network requests are the ones you start, plus one more if you choose daily update
-  checks: a single request per day to github.com for the checksum list of the latest release, with nothing about you in it
-  (see [Updates](docs/user-guide.md#updates) and [what leaves your machine](docs/architecture.md#stack)).
+- **No telemetry, no account.** Requests go out when you start them and, if you choose daily update checks, when Codeyard looks for
+  a new version: at most one successful check a day, which downloads two small files from github.com (the checksum list of the
+  latest release and its signature). GitHub sees your IP address and that the request comes from `curl`; there are no cookies, no
+  identifier and nothing about your files (see [Updates](docs/user-guide.md#updates) and
+  [what leaves your machine](docs/architecture.md#stack)).
 - **No embedded web view.** The interface is drawn by GPUI. Markdown preview is drawn natively too.
 
 How it sits next to other editors:

@@ -238,11 +238,20 @@ pub(super) struct UpdateUi {
     /// Release notes of the offered release (parsed once) and how this copy can be updated (looked up when a release is
     /// offered, because it probes the disk).
     pub(super) notes: Vec<crate::markdown::Block>,
+    /// The same notes as plain text for the accessibility tree (capped, with a pointer to the release page).
+    pub(super) notes_text: String,
+    /// The notes region takes the keyboard (Up, Down, Page Up/Down, Home, End scroll it) and is reached by Tab before the buttons.
+    pub(super) notes_focus: FocusHandle,
+    pub(super) notes_scroll: gpui::ScrollHandle,
     pub(super) kind: crate::update_install::InstallKind,
     pub(super) run: Option<update_glue::Run>,
     pub(super) next_run: u64,
     /// Time of the last check that got an answer (also kept in the state database).
     pub(super) last_check: Option<std::time::SystemTime>,
+    /// Checks that failed within the last day (not stored: a restart is a fresh start), see `update::retry_allowed`.
+    pub(super) failures: Vec<std::time::SystemTime>,
+    /// When a key was last pressed in any window: the first-run question waits for a quiet keyboard.
+    pub(super) last_key: Option<std::time::SystemTime>,
     /// One handle per dialog button, in tab order, and where focus returns when the dialog closes.
     pub(super) focus: Vec<FocusHandle>,
     pub(super) return_focus: Option<FocusHandle>,
@@ -261,10 +270,15 @@ impl UpdateUi {
             dialog: update_glue::Dialog::Closed,
             manual: false,
             notes: Vec::new(),
-            kind: crate::update_install::InstallKind::Manual,
+            notes_text: String::new(),
+            notes_focus: cx.focus_handle().tab_stop(true),
+            notes_scroll: gpui::ScrollHandle::new(),
+            kind: crate::update_install::InstallKind::Manual(crate::update_install::ManualReason::NotInstalled),
             run: None,
             next_run: 0,
             last_check: None,
+            failures: Vec::new(),
+            last_key: None,
             focus: (0..update_glue::MAX_BUTTONS).map(|_| cx.focus_handle().tab_stop(true)).collect(),
             return_focus: None,
             armed: false,
