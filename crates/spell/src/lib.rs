@@ -668,7 +668,17 @@ mod tests {
         std::fs::create_dir_all(root.join(".xx.part99999/junk")).unwrap();
         // Only leftovers older than an hour count as crashed (a fresh one may belong to a running installer).
         let long_ago = std::time::SystemTime::now() - Duration::from_secs(2 * 3600);
-        std::fs::File::open(root.join(".xx.part99999")).unwrap().set_modified(long_ago).unwrap();
+        // Windows only lets a directory handle change times when it is opened for attribute writes with backup semantics.
+        #[cfg(windows)]
+        let stale = {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+            std::fs::OpenOptions::new().access_mode(FILE_WRITE_ATTRIBUTES).custom_flags(FILE_FLAG_BACKUP_SEMANTICS).open(root.join(".xx.part99999"))
+        };
+        #[cfg(not(windows))]
+        let stale = std::fs::File::open(root.join(".xx.part99999"));
+        stale.unwrap().set_modified(long_ago).unwrap();
         let mut files = HashMap::new();
         files.insert(dictionary_url("xx", "index.aff"), Ok(b"SET UTF-8\n".to_vec()));
         files.insert(dictionary_url("xx", "index.dic"), Ok(b"1\nword\n".to_vec()));

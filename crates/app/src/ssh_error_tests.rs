@@ -131,10 +131,20 @@ fn a_dropped_bridge_reconnects_and_the_edit_can_be_saved(cx: &mut TestAppContext
     let ed = ssh_open_file(&wb, cx, &dir.join("src/main.rs"));
     ed.update(cx, |e, cx| e.insert_at_for_test(0, "// kept\n", cx));
 
-    let _ = std::process::Command::new("pkill").arg("-f").arg(format!("{}/remote/agent.*--attach", sshd.dir.display())).status();
+    // The failure on slow CI runners was a bare timeout: say what was killed and which notices came and went.
+    let pattern = format!("{}/remote/agent.*--attach", sshd.dir.display());
+    let matched = std::process::Command::new("pgrep").arg("-f").arg(&pattern).output().map_or(0, |o| String::from_utf8_lossy(&o.stdout).lines().count());
+    eprintln!("{matched} agent process(es) match {pattern:?}");
+    let _ = std::process::Command::new("pkill").arg("-f").arg(&pattern).status();
+    let mut seen = String::new();
     wait_secs(cx, 60, "reconnected", |cx| {
         tick(cx);
-        notice(&wb, cx).starts_with("Reconnected")
+        let now = notice(&wb, cx);
+        if now != seen {
+            eprintln!("notice: {now:?}");
+            seen.clone_from(&now);
+        }
+        now.starts_with("Reconnected")
     });
     assert!(ed.read_with(cx, |e, _| e.is_dirty()), "the unsaved edit survived the reconnect");
     ed.update(cx, |e, cx| e.save_now(cx));
