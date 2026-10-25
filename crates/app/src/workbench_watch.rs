@@ -1,0 +1,249 @@
+//! Workbench: file watching, live reload of the settings file, and git polling.
+
+use super::*;
+
+impl Workbench {
+    /// Listen for the host's change events (called again when the host changes).
+    pub(super) fn listen_fs(&mut self, cx: &mut Context<Self>) {
+        self.watched.clear();
+        let rx = self.remote.host.fs_events();
+        self.fs_task = Some(cx.spawn(async move |this, cx| {
+            use futures::StreamExt;
+            // Changes of the same path while the UI is busy merge into one entry (the watched set is small, so is the queue).
+            let mut rx = ui::bridge_coalescing(rx, |q, changes| match q.back_mut() {
+                Some(pending) => host::merge_fs_changes(pending, changes),
+                None => q.push_back(changes),
+            });
+            while let Some(changes) = rx.next().await {
+                if this.update(cx, |this, cx| this.on_fs_changes(changes, cx)).is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// Watch set: open files on this host and folders open in the tree. Recomputed
+    /// every render and sent only on change, so nothing gets forgotten.
+    pub(super) fn sync_watches(&mut self, cx: &App) {
+        let mut paths: Vec<String> = self.tabs.editors.iter().map(|e| e.read(cx)).filter(|e| e.uses_host(&self.remote.host)).map(|e| e.path.clone()).collect();
+        for t in self.all_trees() {
+            paths.extend(t.read(cx).expanded_dirs());
+        }
+        paths.extend(self.roots.extra_roots.iter().cloned());
+        paths.extend(self.roots.extra_roots.iter().flat_map(|r| folder_settings_paths(r)));
+        paths.extend(self.project_settings_paths(cx).into_iter().map(|(p, ..)| p));
+        // Commit, checkout, `git add` from a terminal: index and HEAD change.
+        if let Some(g) = &self.vcs.status {
+            // In a worktree/submodule `.git` is a file: watch the real directory.
+            let dir = g.git_dir.clone().unwrap_or_else(|| g.abs(".git"));
+            paths.push(format!("{dir}/index"));
+            paths.push(format!("{dir}/HEAD"));
+        }
+        paths.sort();
+        paths.dedup();
+        if paths != self.watched {
+            self.remote.host.watch(paths.clone());
+            self.watched = paths;
+        }
+    }
+
+    pub(super) fn on_fs_changes(&mut self, changes: host::FsChanges, cx: &mut Context<Self>) {
+        let settings_files: Vec<String> = self.project_settings_paths(cx).into_iter().map(|(p, ..)| p).collect();
+        if changes.iter().any(|(p, _)| settings_files.contains(p)) {
+            self.load_project_settings(cx);
+        }
+        // If extra folders' settings files changed, only that folder's settings are re-read.
+        for root in self.roots.extra_roots.clone() {
+            if changes.iter().any(|(p, _)| folder_settings_paths(&root).contains(p)) {
+                self.load_folder_settings(root, cx);
+            }
+        }
+        if let Some(g) = &self.vcs.status {
+            let prefix = format!("{}/", g.root.trim_end_matches('/'));
+            let git_dir = g.git_dir.as_ref().map(|d| format!("{}/", d.trim_end_matches('/')));
+            if changes.iter().any(|(p, _)| p.starts_with(&prefix) || git_dir.as_ref().is_some_and(|d| p.starts_with(d.as_str()))) {
+                self.refresh_git(300, cx);
+            }
+        }
+        for (path, kind) in changes {
+            if self.reload_in_trees(&path, cx) {
+                self.roots.file_index = None;
+            }
+            let host = self.remote.host.clone();
+            for ed in self.all_editors() {
+                let matches = {
+                    let e = ed.read(cx);
+                    e.path == path && e.uses_host(&host)
+                };
+                if matches {
+                    ed.update(cx, |e, cx| e.on_disk_change(kind, cx));
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    // --- Settings ---
+
+    pub(super) fn config_paths(&self) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        let dir = self.cfg.dir.as_ref()?;
+        Some((dir.join("settings.jsonc"), dir.join("keybindings.jsonc")))
+    }
+
+    /// Read and apply the settings and shortcut files. Warnings go to the status bar.
+    pub(super) fn reload_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // If there is no settings folder (tests) only project layers are applied; if there are none either,
+        // don't touch anything (don't overwrite externally supplied settings with defaults).
+        let paths = self.config_paths();
+        if paths.is_none() && self.cfg.project.is_empty() {
+            return;
+        }
+        let mtime = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+        if let Some((spath, kpath)) = &paths {
+            self.cfg.stamp = (mtime(spath), mtime(kpath));
+        }
+        let kpath = paths.as_ref().map(|(_, k)| k.clone());
+        let file = paths.as_ref().and_then(|(s, _)| std::fs::read_to_string(s).ok());
+        let layers: Vec<settings::Layer> = self.cfg.project.iter().map(|(n, t, w)| (n.as_str(), t.as_str(), *w)).collect();
+        self.cfg.dirty = false;
+        // If the user turned the gate off in their own file (even if not applied yet), every folder is trusted.
+        let gate_off = file.as_deref().is_some_and(|f| settings::parse_layers(f, &[]).is_ok_and(|(s, _)| !s.workspace_trust));
+        let trusted = gate_off || self.root(cx).is_none_or(|r| self.is_trusted_root(&r, cx));
+        let (new, mut warnings) = match settings::parse_layers_trusted(file.as_deref().unwrap_or("{}"), &layers, trusted) {
+            Ok(parsed) => parsed,
+            // Half-written file: the last valid settings stay, the error is shown.
+            Err(e) => {
+                let mut warnings = vec![e];
+                warnings.extend(crate::apply_keymap(cx, kpath.as_deref()));
+                self.notice = Some(Notice::Error(warnings.join(" · ").into()));
+                cx.notify();
+                return;
+            }
+        };
+        if new.theme != THEME_AUTO && !self.themes.iter().any(|t| t.id == new.theme) {
+            let ids: Vec<&str> = self.themes.iter().map(|t| t.id.as_str()).collect();
+            warnings.insert(0, format!("settings.jsonc: {}", crate::i18n::tf("theme “{}” not found (available: auto, {})", &[&new.theme, &ids.join(", ")])));
+        }
+        let old = cx.global::<Settings>().clone();
+        // Zoom is applied on top of the sizes in the settings file.
+        self.chrome.zoom_base = (new.editor_font_size, new.editor_line_height, new.terminal_font_size);
+        let mut new = new;
+        if self.chrome.zoom != 0. {
+            new.editor_font_size = (new.editor_font_size + self.chrome.zoom).max(6.);
+            new.editor_line_height = (new.editor_line_height + self.chrome.zoom * 1.5).max(10.);
+            new.terminal_font_size = (new.terminal_font_size + self.chrome.zoom).max(6.);
+        }
+        cx.set_global(new.clone());
+        // UI language: if it changed, the macOS menu bar and Dock menu are rebuilt (other surfaces read it on every render).
+        if crate::i18n::apply_setting(&new.ui_language) {
+            self.sync_dock_menu(cx);
+        }
+        self.refresh_speller(cx);
+        if (old.schema_associations.as_slice(), old.schema_download, old.schema_validate)
+            != (new.schema_associations.as_slice(), new.schema_download, new.schema_validate)
+        {
+            for ed in self.all_editors() {
+                self.schedule_schema(&ed, Duration::ZERO, cx);
+            }
+        }
+        crate::icon_theme::set(crate::icon_theme::IconTheme::from_id(&new.icon_theme).unwrap_or(crate::icon_theme::ALL[0]));
+        if kpath.is_some() {
+            warnings.extend(crate::apply_keymap(cx, kpath.as_deref()));
+        }
+        // If the indent setting changed (including project settings), open editors re-resolve it.
+        if (old.tab_size, old.insert_spaces) != (new.tab_size, new.insert_spaces) {
+            for ed in self.all_editors() {
+                ed.update(cx, |e, cx| e.refresh_indent(cx));
+            }
+        }
+        // Theme: if there is no settings file, the old saved value (state) applies.
+        if file.is_some() && !self.cfg.theme_override && new.theme != self.theme_choice {
+            self.theme_choice = new.theme.clone();
+            let t = self.theme_choice.clone();
+            self.apply_theme(&t, window, cx);
+        }
+        if old.color_overrides != new.color_overrides {
+            let choice = self.theme_choice.clone();
+            self.apply_theme(&choice, window, cx);
+        }
+        // Global state: write only if it changed in this reload (an unchanged window must not
+        // overwrite another window's associations with an empty list).
+        if old.file_associations != new.file_associations {
+            crate::editor::set_associations(new.file_associations.clone());
+        }
+        warnings.extend(self.reload_snippets());
+        if (old.lsp_enabled, &old.lsp_servers) != (new.lsp_enabled, &new.lsp_servers) {
+            self.restart_lsp(cx);
+        }
+        if old.files_exclude != new.files_exclude {
+            self.roots.file_index = None;
+            for t in self.all_trees() {
+                t.update(cx, |t, cx| t.reload_all(cx));
+            }
+        }
+        let view = crate::tree::ViewOptions { compact: new.compact_folders, sort: crate::tree::SortOrder::from_setting(&new.sort_order) };
+        for t in self.all_trees() {
+            t.update(cx, |t, cx| t.set_options(view, cx));
+        }
+        self.notice = warnings.first().map(|w| {
+            let more = if warnings.len() > 1 { format!(" {}", crate::i18n::tf("(+{} more)", &[&(warnings.len() - 1)])) } else { String::new() };
+            Notice::Error(format!("{w}{more}").into())
+        });
+        self.sync_settings_page(cx);
+        window.refresh();
+        cx.notify();
+    }
+
+    /// The watcher only sees open files and folders: `>>` in a terminal, a formatter
+    /// or a generator rewriting an unopened file would leave git status stale.
+    /// While the window is in front, refresh lightly every few seconds.
+    pub(super) fn poll_git(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_secs(4)).await;
+                let ok = this
+                    .update_in(cx, |this, window, cx| {
+                        // Test windows are never active.
+                        let active = window.is_window_active() || cfg!(test);
+                        if active && this.vcs.status.is_some() && this.git_refresh_idle() {
+                            this.refresh_git(0, cx);
+                        }
+                    })
+                    .is_ok();
+                if !ok {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    pub(super) fn git_refresh_idle(&self) -> bool {
+        !self.vcs.refreshing
+    }
+
+    /// Poll once a second: settings apply right away when the file is saved.
+    pub(super) fn watch_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.cfg.dir.is_none() {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_secs(1)).await;
+                let ok = this
+                    .update_in(cx, |this, window, cx| {
+                        let Some((spath, kpath)) = this.config_paths() else { return };
+                        let mtime = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+                        if this.cfg.dirty || (mtime(&spath), mtime(&kpath)) != this.cfg.stamp {
+                            this.reload_config(window, cx);
+                        }
+                    })
+                    .is_ok();
+                if !ok {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+}

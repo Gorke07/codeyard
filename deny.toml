@@ -1,0 +1,47 @@
+# cargo-deny: dependency gate (licences, known vulnerabilities, sources). `cargo deny check` runs
+# in CI (.github/workflows/ci.yml) and goes red when a new dependency breaks one of them.
+
+[graph]
+targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+
+[advisories]
+# "Unmaintained" warnings are only red for our direct dependencies: async-std, paste,
+# proc-macro-error2, rustls-pemfile, rustybuzz and ttf-parser come in through GPUI alone, and we
+# pin GPUI (vendor/gpui). Vulnerabilities and yanked versions are red everywhere. A knowingly
+# accepted advisory goes into `ignore` with its reason.
+unmaintained = "workspace"
+ignore = []
+yanked = "deny"
+
+[licenses]
+# Permissive licences only. MPL-2.0 is file-level copyleft and is accepted because the crates
+# using it (nucleo-matcher and spellbook directly; dwrote, option-ext and cbindgen through GPUI)
+# are used unmodified (THIRD_PARTY_NOTICES.md). For dual-licensed crates one option is enough.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "CC0-1.0",
+    "0BSD",
+    "BSL-1.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# GPUI and its dependencies pull several versions of the same crate; that stays a warning.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

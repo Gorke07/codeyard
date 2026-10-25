@@ -1,0 +1,328 @@
+//! Workbench: remote connection, workspace trust and recents.
+
+use super::*;
+
+impl Workbench {
+    /// Running Docker containers or WSL distros: the selected one becomes the target connected through the agent.
+    pub(super) fn show_remote_targets(&mut self, wsl: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let task = cx.background_executor().spawn(async move {
+            if wsl {
+                host::ssh::list_wsl()
+                    .map(|v| v.into_iter().map(|d| (format!("wsl:{d}"), d, crate::i18n::t("WSL distribution").to_string())).collect::<Vec<_>>())
+            } else {
+                host::ssh::list_containers().map(|v| v.into_iter().map(|(n, i)| (format!("docker:{n}"), n, i)).collect::<Vec<_>>())
+            }
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            this.update_in(cx, |this, window, cx| match result {
+                Ok(list) if !list.is_empty() => {
+                    let items = list.iter().map(|(_, n, d)| PickItem { label: n.clone().into(), detail: Some(d.clone().into()), keys: None }).collect();
+                    let aliases = list.into_iter().map(|(a, ..)| a).collect();
+                    let title = if wsl { crate::i18n::t("Connect to which WSL distribution?") } else { crate::i18n::t("Connect to which running container?") };
+                    let picker = cx.new(|cx| Picker::new(vec![PickSource::List { prefix: "", items }], title, "", None, cx));
+                    this.show_overlay(picker, OverlayKind::RemoteTargets(aliases), window, cx);
+                }
+                Ok(_) => {
+                    this.notice =
+                        Some(Notice::Info(if wsl { crate::i18n::t("No WSL distributions found.") } else { crate::i18n::t("No running containers.") }.into()));
+                    cx.notify();
+                }
+                Err(e) => {
+                    this.notice = Some(Notice::Error(e.lines().next().unwrap_or(crate::i18n::t("could not list")).to_string().into()));
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub fn connect(&mut self, alias: String, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.remote.conn, Conn::Connecting { .. }) || self.refuse_if_dirty(cx) {
+            return;
+        }
+        let step = Arc::new(AtomicU8::new(Step::Probing as u8));
+        self.remote.conn = Conn::Connecting { alias: alias.clone(), step: step.clone() };
+        self.notice = None;
+        let bundle = self.remote.bundle.clone();
+        let a = alias.clone();
+        let progress = step.clone();
+        let task = cx.background_executor().spawn(async move {
+            if a == LOCAL_AGENT_ALIAS {
+                host::ssh::spawn_local_agent(&bundle)
+            } else {
+                host::ssh::connect(&a, &bundle, |s| progress.store(s as u8, Ordering::Relaxed))
+            }
+        });
+        // Refresh the step indicator (while connecting).
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(150)).await;
+                let still = this
+                    .update(cx, |this, cx| {
+                        cx.notify();
+                        matches!(this.remote.conn, Conn::Connecting { .. })
+                    })
+                    .unwrap_or(false);
+                if !still {
+                    break;
+                }
+            }
+        })
+        .detach();
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            this.update_in(cx, |this, window, cx| match result {
+                Ok(remote) => this.attach_host(Arc::new(remote), alias, window, cx),
+                Err(e) => {
+                    let message: SharedString = e.to_string().into();
+                    if let Some(s) = &this.persist.state {
+                        let _ = s.record_host_error(&alias, &message);
+                    }
+                    this.remote.pending_path = None;
+                    // Reason and "Reconnect" button are in the toast; the red indicator also stays in the status bar.
+                    let why = crate::i18n::tf("Could not connect to {}: {}", &[&alias, &message]);
+                    this.notice = Some(Notice::Error(why.clone().into()));
+                    // Connection started from a recent: if it can't be reached anymore, ask whether to remove it from the list.
+                    if let Some(r) = this.persist.opening_recent.take() {
+                        this.ask_forget_unreachable(r, why, window, cx);
+                    }
+                    this.remote.conn = Conn::Failed { alias, message };
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Connection established: switch the host, open the remote home directory (or the pending folder).
+    pub fn attach_host(&mut self, host: Arc<dyn Host>, alias: String, window: &mut Window, cx: &mut Context<Self>) {
+        let info = host.info().clone();
+        self.close_all_terminals(cx);
+        self.remote.host = host;
+        self.listen_fs(cx);
+        self.listen_status(alias.clone(), cx);
+        self.remote.conn = Conn::Connected { alias: alias.clone() };
+        if let Some(s) = self.persist.state.as_ref().filter(|_| alias != LOCAL_AGENT_ALIAS) {
+            let _ = s.record_host_ok(&alias, info.version, &format!("{}-{}", info.arch, info.os));
+        }
+        self.shutdown_lsp(cx); // servers were running on the old host
+        self.ports.forwards.clear();
+        self.start_ports(cx);
+        let chosen = self.remote.pending_path.take();
+        // From a recent: does the folder still exist on the server? If not, offer to remove it and open the folder picker.
+        if let (Some(r), Some(path)) = (self.persist.opening_recent.take(), chosen.clone()) {
+            let host = self.remote.host.clone();
+            let check = cx.background_executor().spawn(async move { host.read_dir(&path).map(|_| ()).map_err(|e| e.to_string()) });
+            cx.spawn_in(window, async move |this, cx| {
+                if let Err(why) = check.await {
+                    this.update_in(cx, |this, window, cx| {
+                        this.ask_forget_unreachable(r, crate::i18n::tf("The folder could not be read on the server: {}", &[&why]), window, cx);
+                        this.open_remote_folder(window, cx);
+                    })
+                    .ok();
+                }
+            })
+            .detach();
+        }
+        let ask_folder = chosen.is_none() && alias != LOCAL_AGENT_ALIAS;
+        self.set_root(chosen.unwrap_or(info.home), cx);
+        self.chrome.panel = Some(Panel::Explorer);
+        window.focus(&self.roots.primary.focus_handle(cx));
+        // No folder chosen (new connection): ask which folder to open, like VS Code;
+        // Esc leaves it at the home directory.
+        if ask_folder {
+            self.open_remote_folder(window, cx);
+        }
+    }
+
+    /// State of the remote connection: drop, reconnect, giving up.
+    pub(super) fn listen_status(&mut self, alias: String, cx: &mut Context<Self>) {
+        let rx = self.remote.host.status_events();
+        self.status_task = Some(cx.spawn(async move |this, cx| {
+            use futures::StreamExt;
+            let mut rx = ui::bridge(rx);
+            while let Some(status) = rx.next().await {
+                let alias = alias.clone();
+                let ok = this
+                    .update(cx, |this, cx| {
+                        match status {
+                            host::ConnStatus::Reconnecting { attempt, .. } => {
+                                if attempt == 1 {
+                                    this.notice = Some(Notice::Info(crate::i18n::tf("The connection to {} dropped. Reconnecting…", &[&alias]).into()));
+                                }
+                                this.remote.conn = Conn::Reconnecting { alias, attempt };
+                                this.ports.task = None;
+                            }
+                            host::ConnStatus::Connected { resumed } => {
+                                this.remote.conn = Conn::Connected { alias };
+                                this.start_ports(cx);
+                                this.reattach_lsp(cx);
+                                this.notice = Some(if resumed {
+                                    Notice::Info(crate::i18n::t("Reconnected. Terminals kept running.").into())
+                                } else {
+                                    Notice::Error(crate::i18n::t("Reconnected, but the server session had expired: terminals were closed.").into())
+                                });
+                            }
+                            host::ConnStatus::Lost(e) => {
+                                // Permanent loss: say why, that the work is safe, and what to do.
+                                let dirty = this.any_dirty(cx);
+                                let lost = if dirty {
+                                    crate::i18n::tf("Lost the connection to {}: {}. Your open files stay here and unsaved changes are kept, but they cannot be saved until you reconnect (File: Save a Copy to This Computer… keeps one locally).", &[&alias, &e])
+                                } else {
+                                    crate::i18n::tf("Lost the connection to {}: {}. Your open files stay here.", &[&alias, &e])
+                                };
+                                this.notice = Some(Notice::Error(lost.into()));
+                                this.remote.conn = Conn::Failed { alias, message: crate::i18n::tf("Connection lost: {}", &[&e]).into() };
+                                this.stop_ports();
+                                this.ports.forwards.clear();
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_ok();
+                if !ok {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// "Reconnect" (the notification button): re-establish the dropped connection, returning to the open folder.
+    pub(super) fn reconnect_lost(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Conn::Failed { alias, .. } = &self.remote.conn else { return };
+        let alias = alias.clone();
+        self.remote.pending_path = self.root(cx);
+        self.connect(alias, window, cx);
+    }
+
+    pub(super) fn disconnect(&mut self, cx: &mut Context<Self>) {
+        if self.refuse_if_dirty(cx) {
+            return;
+        }
+        self.cancel_all_forwards();
+        self.stop_ports();
+        self.close_all_terminals(cx);
+        self.remote.host = Arc::new(host::local());
+        self.listen_fs(cx);
+        self.status_task = None;
+        self.remote.conn = Conn::Local;
+        let h = self.remote.host.clone();
+        self.search.update(cx, |s, cx| s.set_context(h, None, cx));
+        self.tabs.editors.clear();
+        self.tabs.other = None;
+        self.tabs.focused_left = true;
+        self.tabs.active = None;
+        let host = self.remote.host.clone();
+        self.roots.primary.update(cx, |t, cx| t.set_root(host, None, cx));
+        cx.notify();
+    }
+
+    /// The window's folder: (ssh alias, path).
+    pub(super) fn workspace_key(&self, cx: &App) -> Option<(Option<String>, String)> {
+        let alias = match &self.remote.conn {
+            Conn::Connected { alias } | Conn::Reconnecting { alias, .. } if self.remote.host.is_remote() => Some(alias.clone()),
+            _ => None,
+        };
+        Some((alias, self.root(cx)?))
+    }
+
+    /// Upgrade migration: language servers now start only in trusted folders. Folders opened before (servers already
+    /// ran) count as trusted once; newly opened ones get the trust prompt.
+    pub(crate) fn migrate_trust(state: &State) {
+        const KEY: &str = "trust_migrated_v1";
+        if state.get(KEY).is_some() {
+            return;
+        }
+        for r in state.recent_workspaces(500).unwrap_or_default() {
+            let _ = state.set(&format!("trust:{}:{}", r.host.as_deref().unwrap_or(""), r.path), "1");
+        }
+        let _ = state.set(KEY, "1");
+    }
+
+    /// Key of the trust record: the same path on a different server is a different folder.
+    pub(super) fn trust_key(&self, root: &str) -> String {
+        let alias = match &self.remote.conn {
+            Conn::Connected { alias } | Conn::Reconnecting { alias, .. } if self.remote.host.is_remote() => alias.as_str(),
+            _ => "",
+        };
+        format!("trust:{alias}:{root}")
+    }
+
+    /// Is the folder's author trusted? With the setting off, every folder is trusted.
+    pub(super) fn is_trusted_root(&self, root: &str, cx: &App) -> bool {
+        !cx.global::<Settings>().workspace_trust
+            || self.cfg.trusted.contains(root)
+            || self.persist.state.as_ref().is_some_and(|s| s.get(&self.trust_key(root)).is_some())
+    }
+
+    /// Trust the folder: stored permanently, project settings (terminal.shell, lsp.servers) are reapplied.
+    pub(super) fn trust_root(&mut self, root: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.cfg.trusted.insert(root.to_string());
+        if let Some(s) = &self.persist.state {
+            let _ = s.set(&self.trust_key(root), "1");
+        }
+        self.reload_config(window, cx);
+        // Start the language servers held back by the missing trust.
+        self.lsp.restricted_notified.remove(root);
+        self.restart_lsp(cx);
+        self.notice = Some(Notice::Info(crate::i18n::tf("Trusted “{}”", &[&ui::file_name(root)]).into()));
+        cx.notify();
+    }
+
+    /// Before an action that runs commands in an untrusted folder (task, test, debug):
+    /// runs immediately if trusted, otherwise after the local confirmation page. `Cancel` runs nothing.
+    pub(super) fn require_trust(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) {
+        let Some(root) = self.active_root(cx).filter(|r| !self.is_trusted_root(r, cx)) else { return then(self, window, cx) };
+        let detail = crate::i18n::tf(
+            "“{}” can run programs through its tasks, debug configurations and project settings. Only continue if you trust where this folder came from.",
+            &[&ui::file_name(&root)],
+        );
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            crate::i18n::t("Do you trust the authors of this folder?"),
+            Some(&detail),
+            &[crate::i18n::t("Trust Folder and Continue"), crate::i18n::t("Cancel")],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            if answer.await == Ok(0) {
+                this.update_in(cx, |this, window, cx| {
+                    this.trust_root(&root, window, cx);
+                    then(this, window, cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// "Workspace: Trust This Folder": trust without asking (opened from here when settings blocked it).
+    pub(super) fn trust_this_folder(&mut self, _: &TrustWorkspace, window: &mut Window, cx: &mut Context<Self>) {
+        match self.active_root(cx) {
+            Some(root) => self.trust_root(&root, window, cx),
+            None => {
+                self.notice = Some(Notice::Info(crate::i18n::t("Open a folder first.").into()));
+                cx.notify();
+            }
+        }
+    }
+
+    /// Add a command run from the palette to "recently used".
+    pub(super) fn remember_command(&mut self, label: String) {
+        self.recent_commands.retain(|l| *l != label);
+        self.recent_commands.insert(0, label);
+        self.recent_commands.truncate(8);
+        if let Some(s) = &self.persist.state {
+            let _ = s.set("recent_commands", &self.recent_commands.join("\n"));
+        }
+    }
+}

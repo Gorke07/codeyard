@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/doancan/codeyard/discussions
+    about: Usage questions and open-ended ideas go to Discussions; issues are for bugs and concrete requests.
+  - name: Security vulnerability
+    url: https://github.com/doancan/codeyard/security/advisories/new
+    about: Do not open a public issue. Report it privately (see SECURITY.md).

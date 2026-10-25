@@ -1,0 +1,1113 @@
+//! Integrated terminal (S08): VT parsing with alacritty_terminal, PTY on the agent
+//! (local or remote, same protocol). Colors are derived from the theme.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use alacritty_terminal::event::{Event as TermEvent, EventListener};
+use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::index::{Column, Line, Point as GridPoint, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
+use alacritty_terminal::term::cell::Flags;
+use alacritty_terminal::term::{Config, Term, TermMode};
+use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor, Processor, Rgb, StdSyncHandler};
+use gpui::{
+    App, Bounds, ClipboardItem, Context, Element, ElementId, Entity, EventEmitter, FocusHandle, Focusable, FontStyle, FontWeight, GlobalElementId,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels, Point, ScrollWheelEvent, SharedString, Style, TextRun, Window, actions, div,
+    fill, point, prelude::*, px, relative, size,
+};
+use host::{Host, PtyEvent};
+
+use crate::ui::{MONO_FONT, Palette, c, palette, text};
+
+actions!(terminal, [TermPaste, TermCopy, TermClear]);
+
+pub enum TerminalEvent {
+    TitleChanged,
+    Exited,
+    /// A key was pressed after the shell exited.
+    CloseRequested,
+    /// ⌘-click: URL or file location.
+    OpenLink(crate::links::Link),
+}
+
+/// Upper bound (bytes) on terminal output not yet parsed.
+const MAX_BACKLOG: usize = 32 * 1024 * 1024;
+
+/// Pending-output counter between the bridge thread and the UI: a chunk over the limit is dropped (see `admit`).
+#[derive(Default)]
+struct OutputBacklog {
+    pending: std::sync::atomic::AtomicUsize,
+    dropped: std::sync::atomic::AtomicBool,
+}
+
+impl OutputBacklog {
+    /// Accept the new `len` bytes of output (`true`) or drop it (`false`, which raises the "dropped" flag).
+    fn admit(&self, len: usize) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        if self.pending.load(Relaxed).saturating_add(len) > MAX_BACKLOG {
+            self.dropped.store(true, Relaxed);
+            return false;
+        }
+        self.pending.fetch_add(len, Relaxed);
+        true
+    }
+
+    /// The UI parsed a chunk.
+    fn consumed(&self, len: usize) {
+        self.pending.fetch_sub(len, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// `true` once if output was dropped (so the user can be told).
+    fn take_dropped(&self) -> bool {
+        self.dropped.swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct TermSize {
+    cols: usize,
+    rows: usize,
+}
+
+impl Dimensions for TermSize {
+    fn total_lines(&self) -> usize {
+        self.rows
+    }
+    fn screen_lines(&self) -> usize {
+        self.rows
+    }
+    fn columns(&self) -> usize {
+        self.cols
+    }
+}
+
+/// What the terminal sends back to the app (title, replies to the PTY) is queued.
+#[derive(Clone, Default)]
+struct Listener(Rc<RefCell<Vec<TermEvent>>>);
+
+impl EventListener for Listener {
+    fn send_event(&self, event: TermEvent) {
+        self.0.borrow_mut().push(event);
+    }
+}
+
+pub struct TerminalView {
+    /// Folder it was started in (tests read it).
+    #[cfg_attr(not(test), allow(dead_code))]
+    cwd: Option<String>,
+    host: Arc<dyn Host>,
+    pty: Option<u32>,
+    /// Input sent before the shell started (task command): written once the pty is up.
+    pending_input: Vec<u8>,
+    /// Fixed title (task name): the shell's title updates don't change it.
+    title_locked: bool,
+    term: Term<Listener>,
+    parser: Processor<StdSyncHandler>,
+    events: Listener,
+    pub title: SharedString,
+    exit: Option<Option<i32>>,
+    error: Option<SharedString>,
+    size: TermSize,
+    /// Grid origin and cell width from the last paint (for mouse → cell).
+    grid: (Point<Pixels>, Pixels),
+    selecting: bool,
+    /// Link hovered while ⌘ is held: (screen row, columns).
+    hover_link: Option<(usize, std::ops::Range<usize>)>,
+    focus_handle: FocusHandle,
+}
+
+impl EventEmitter<TerminalEvent> for TerminalView {}
+
+impl Focusable for TerminalView {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl TerminalView {
+    /// Folder the terminal was started in (a split terminal opens in the same place).
+    pub fn start_dir(&self) -> Option<String> {
+        self.cwd.clone()
+    }
+
+    #[cfg(test)]
+    pub fn cwd_for_test(&self) -> Option<String> {
+        self.start_dir()
+    }
+
+    pub fn new(host: Arc<dyn Host>, cwd: Option<String>, shell: Option<String>, cx: &mut Context<Self>) -> Self {
+        let size = TermSize { cols: 100, rows: 24 };
+        let events = Listener::default();
+        // Scrollback from settings (default 2,000; 10,000 × 200 columns can reach ~45 MB).
+        let scrollback = cx.global::<crate::settings::Settings>().terminal_scrollback;
+        let config = Config { scrolling_history: scrollback, ..Config::default() };
+        let term = Term::new(config, &size, events.clone());
+        let view = TerminalView {
+            title: "terminal".into(),
+            cwd: cwd.clone(),
+            host: host.clone(),
+            pty: None,
+            pending_input: Vec::new(),
+            title_locked: false,
+            term,
+            parser: Processor::new(),
+            events,
+            exit: None,
+            error: None,
+            size,
+            grid: (Point::default(), px(8.)),
+            selecting: false,
+            hover_link: None,
+            focus_handle: cx.focus_handle(),
+        };
+
+        let (cols, rows) = (size.cols as u16, size.rows as u16);
+        let spawn = cx.background_executor().spawn(async move { host.pty_spawn(cols, rows, cwd, shell) });
+        cx.spawn(async move |this, cx| {
+            let pty = match spawn.await {
+                Ok(p) => p,
+                Err(e) => {
+                    this.update(cx, |t, cx| {
+                        t.error = Some(crate::i18n::tf("Could not start a shell: {}", &[&e]).into());
+                        cx.notify();
+                    })
+                    .ok();
+                    return;
+                }
+            };
+            let id = pty.id;
+            let ok = this
+                .update(cx, |t, cx| {
+                    t.pty = Some(id);
+                    // Report it if the view got its size in the meantime.
+                    t.host.pty_resize(id, t.size.cols as u16, t.size.rows as u16);
+                    let pending = std::mem::take(&mut t.pending_input);
+                    if !pending.is_empty() {
+                        t.host.pty_input(id, pending);
+                    }
+                    cx.notify();
+                })
+                .is_ok();
+            if !ok {
+                return;
+            }
+            // Output pump: wait, then parse whatever piled up in one go (no frame per chunk).
+            use futures::StreamExt;
+            // If the UI lags (e.g. `yes` output), pending output must not grow without bound: whatever exceeds 32 MB is dropped and a note
+            // is left (the terminal's scrollback is only 2,000 lines anyway). The exit event is never dropped.
+            let backlog = Arc::new(OutputBacklog::default());
+            let gate = backlog.clone();
+            let mut events = crate::ui::bridge_with(pty.events, move |ev| match ev {
+                PtyEvent::Output(d) => gate.admit(d.len()),
+                PtyEvent::Exit(_) => true,
+            });
+            while let Some(first) = events.next().await {
+                let mut batch = vec![first];
+                while let Ok(more) = events.try_recv() {
+                    batch.push(more);
+                    if batch.len() > 256 {
+                        break;
+                    }
+                }
+                let mut exited = false;
+                let alive = this
+                    .update(cx, |t, cx| {
+                        for ev in batch {
+                            match ev {
+                                PtyEvent::Output(data) => {
+                                    backlog.consumed(data.len());
+                                    t.feed(&data);
+                                    if backlog.take_dropped() {
+                                        t.feed(b"\r\n\x1b[2m[output was dropped: the terminal could not keep up]\x1b[0m\r\n");
+                                    }
+                                }
+                                PtyEvent::Exit(code) => {
+                                    t.on_exit(code, cx);
+                                    exited = true;
+                                }
+                            }
+                        }
+                        t.drain_events(cx);
+                        cx.notify();
+                    })
+                    .is_ok();
+                if !alive || exited {
+                    return;
+                }
+            }
+            this.update(cx, |t, cx| t.on_exit(None, cx)).ok();
+        })
+        .detach();
+        view
+    }
+
+    fn feed(&mut self, data: &[u8]) {
+        self.parser.advance(&mut self.term, data);
+    }
+
+    fn drain_events(&mut self, cx: &mut Context<Self>) {
+        let events: Vec<TermEvent> = std::mem::take(&mut *self.events.0.borrow_mut());
+        for ev in events {
+            match ev {
+                // The terminal is answering a query (like the cursor position): write it back to the shell.
+                TermEvent::PtyWrite(s) => self.write(s.into_bytes()),
+                TermEvent::Title(_) | TermEvent::ResetTitle if self.title_locked => {}
+                TermEvent::Title(t) => {
+                    self.title = t.into();
+                    cx.emit(TerminalEvent::TitleChanged);
+                }
+                TermEvent::ResetTitle => {
+                    self.title = "terminal".into();
+                    cx.emit(TerminalEvent::TitleChanged);
+                }
+                TermEvent::ClipboardStore(_, s) => cx.write_to_clipboard(ClipboardItem::new_string(s)),
+                _ => {}
+            }
+        }
+    }
+
+    fn on_exit(&mut self, code: Option<i32>, cx: &mut Context<Self>) {
+        if self.exit.is_none() {
+            self.exit = Some(code);
+            cx.emit(TerminalEvent::Exited);
+            cx.notify();
+        }
+    }
+
+    pub fn has_exited(&self) -> bool {
+        self.exit.is_some()
+    }
+
+    fn write(&self, data: Vec<u8>) {
+        if let (Some(id), false) = (self.pty, self.exit.is_some()) {
+            self.host.pty_input(id, data);
+        }
+    }
+
+    /// Send text to the shell (once it starts, if it hasn't yet).
+    pub fn send(&mut self, text: &str) {
+        match self.pty {
+            Some(_) => self.write(text.as_bytes().to_vec()),
+            None => self.pending_input.extend_from_slice(text.as_bytes()),
+        }
+    }
+
+    pub fn set_fixed_title(&mut self, title: String) {
+        self.title = title.into();
+        self.title_locked = true;
+    }
+
+    /// Close the shell (when the tab is closed).
+    pub fn kill(&self) {
+        if let Some(id) = self.pty {
+            self.host.pty_kill(id);
+        }
+    }
+
+    /// View size changed: update the grid and the PTY.
+    fn set_size(&mut self, cols: usize, rows: usize) {
+        let (cols, rows) = (cols.max(2), rows.max(1));
+        if (cols, rows) == (self.size.cols, self.size.rows) {
+            return;
+        }
+        self.size = TermSize { cols, rows };
+        self.term.resize(self.size);
+        if let Some(id) = self.pty {
+            self.host.pty_resize(id, cols as u16, rows as u16);
+        }
+    }
+
+    /// All text including scrollback. Wrapped lines are joined into one (to extract problems from task
+    /// output: a long compiler line must not be split).
+    pub fn scrollback_text(&self) -> String {
+        let grid = self.term.grid();
+        let cols = grid.columns();
+        let mut out = String::new();
+        for i in grid.topmost_line().0..=grid.bottommost_line().0 {
+            let row = &grid[Line(i)];
+            let text: String = (0..cols).map(|c| &row[Column(c)]).filter(|cell| !cell.flags.contains(Flags::WIDE_CHAR_SPACER)).map(|cell| cell.c).collect();
+            if row[Column(cols - 1)].flags.contains(Flags::WRAPLINE) {
+                out.push_str(&text);
+            } else {
+                out.push_str(text.trim_end());
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    /// Text on screen (for tests).
+    #[cfg(test)]
+    pub fn hover_link(&self) -> Option<(usize, std::ops::Range<usize>)> {
+        self.hover_link.clone()
+    }
+
+    #[cfg(test)]
+    pub fn screen_text(&self) -> String {
+        let content = self.term.renderable_content();
+        let mut rows = vec![String::new(); self.size.rows];
+        for cell in content.display_iter {
+            let row = (cell.point.line.0 + content.display_offset as i32) as usize;
+            if row < rows.len() && !cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                rows[row].push(cell.c);
+            }
+        }
+        rows.iter().map(|r| r.trim_end()).collect::<Vec<_>>().join("\n")
+    }
+
+    fn on_key_down(&mut self, ev: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.exit.is_some() || self.error.is_some() {
+            if !ev.keystroke.modifiers.platform {
+                cx.stop_propagation();
+                cx.emit(TerminalEvent::CloseRequested);
+            }
+            return;
+        }
+        let Some(bytes) = key_to_bytes(&ev.keystroke, *self.term.mode()) else { return };
+        cx.stop_propagation();
+        self.term.selection = None;
+        self.term.scroll_display(Scroll::Bottom);
+        self.write(bytes);
+        cx.notify();
+    }
+
+    /// Window position → grid cell + which half of the cell.
+    fn grid_point(&self, pos: Point<Pixels>) -> (GridPoint, Side) {
+        let (origin, cell_w) = self.grid;
+        let line_h = px(text::CODE.1);
+        let x = ((pos.x - origin.x) / cell_w).max(0.);
+        let row = ((pos.y - origin.y) / line_h).floor().clamp(0., (self.size.rows - 1) as f32) as i32;
+        let col = (x.floor() as usize).min(self.size.cols - 1);
+        let side = if x.fract() < 0.5 { Side::Left } else { Side::Right };
+        let offset = self.term.grid().display_offset() as i32;
+        (GridPoint::new(Line(row - offset), Column(col)), side)
+    }
+
+    /// xterm sequence if the program wants the mouse (htop, vim `mouse=a`, tmux): SGR or the legacy
+    /// format. `button`: 0 left, 64/65 wheel up/down. `None` if it doesn't.
+    fn mouse_report(&self, button: u8, pressed: bool, pos: Point<Pixels>, mods: &gpui::Modifiers) -> Option<Vec<u8>> {
+        let mode = *self.term.mode();
+        if !mode.intersects(TermMode::MOUSE_MODE) {
+            return None;
+        }
+        let (origin, cell_w) = self.grid;
+        let line_h = px(text::CODE.1);
+        let col = (((pos.x - origin.x) / cell_w).max(0.).floor() as usize).min(self.size.cols.saturating_sub(1)) + 1;
+        let row = ((pos.y - origin.y) / line_h).max(0.).floor().min((self.size.rows - 1) as f32) as usize + 1;
+        let mut b = button;
+        if mods.shift {
+            b += 4;
+        }
+        if mods.alt {
+            b += 8;
+        }
+        if mods.control {
+            b += 16;
+        }
+        Some(if mode.contains(TermMode::SGR_MOUSE) {
+            format!("\x1b[<{b};{col};{row}{}", if pressed { 'M' } else { 'm' }).into_bytes()
+        } else {
+            // Legacy format: release is "3", coordinates are bytes offset by 32 (at most 223).
+            let b = if pressed { b } else { 3 };
+            vec![0x1b, b'[', b'M', 32 + b, (32 + col.min(223)) as u8, (32 + row.min(223)) as u8]
+        })
+    }
+
+    /// Link at the position: (screen row, columns, link). The row is read cell by cell.
+    fn link_under(&self, pos: Point<Pixels>) -> Option<(usize, std::ops::Range<usize>, crate::links::Link)> {
+        let (at, _) = self.grid_point(pos);
+        // `iter_from` skips the starting cell; read the row directly.
+        let row = &self.term.grid()[at.line];
+        let cells: Vec<char> =
+            (0..self.size.cols).map(|c| &row[Column(c)]).map(|cell| if cell.flags.contains(Flags::WIDE_CHAR_SPACER) { '\0' } else { cell.c }).collect();
+        let (cols, link) = crate::links::link_at(&cells, at.column.0)?;
+        let screen_row = (at.line.0 + self.term.grid().display_offset() as i32).max(0) as usize;
+        Some((screen_row, cols, link))
+    }
+
+    /// Drag: character, double click: word, triple click: line. Shift extends. ⌘-click: link.
+    fn on_mouse_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus_handle);
+        if ev.modifiers.secondary()
+            && !ev.modifiers.shift
+            && let Some((_, _, link)) = self.link_under(ev.position)
+        {
+            self.hover_link = None;
+            cx.emit(TerminalEvent::OpenLink(link));
+            cx.notify();
+            return;
+        }
+        // The program wants the mouse: the click goes to it (⇧ still selects text, like VS Code).
+        if !ev.modifiers.shift
+            && let Some(bytes) = self.mouse_report(0, true, ev.position, &ev.modifiers)
+        {
+            self.write(bytes);
+            return;
+        }
+        let (at, side) = self.grid_point(ev.position);
+        match (&mut self.term.selection, ev.modifiers.shift) {
+            (Some(sel), true) => sel.update(at, side),
+            _ => {
+                let ty = match ev.click_count {
+                    2 => SelectionType::Semantic,
+                    n if n >= 3 => SelectionType::Lines,
+                    _ => SelectionType::Simple,
+                };
+                self.term.selection = Some(Selection::new(ty, at, side));
+            }
+        }
+        self.selecting = true;
+        cx.notify();
+    }
+
+    fn on_mouse_move(&mut self, ev: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // Links are underlined while ⌘ is held (redraws only on change).
+        let hover = (ev.modifiers.secondary() && ev.pressed_button.is_none()).then(|| self.link_under(ev.position).map(|(r, c, _)| (r, c))).flatten();
+        if hover != self.hover_link {
+            self.hover_link = hover;
+            cx.notify();
+        }
+        if !self.selecting || ev.pressed_button != Some(MouseButton::Left) {
+            self.selecting = false;
+            return;
+        }
+        let (at, side) = self.grid_point(ev.position);
+        if let Some(sel) = &mut self.term.selection {
+            sel.update(at, side);
+            cx.notify();
+        }
+    }
+
+    fn on_mouse_up(&mut self, ev: &gpui::MouseUpEvent) {
+        if !ev.modifiers.shift
+            && !self.selecting
+            && let Some(bytes) = self.mouse_report(0, false, ev.position, &ev.modifiers)
+        {
+            self.write(bytes);
+            return;
+        }
+        self.selecting = false;
+        // Single click without dragging: don't leave an empty selection.
+        if self.term.selection.as_ref().is_some_and(|s| s.is_empty()) {
+            self.term.selection = None;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn selected_text(&self) -> Option<String> {
+        self.term.selection_to_string()
+    }
+
+    /// Center of the cell (row, column) in window coordinates (for tests).
+    #[cfg(test)]
+    pub fn cell_center(&self, row: usize, col: usize) -> Point<Pixels> {
+        let (origin, cell_w) = self.grid;
+        point(origin.x + cell_w * (col as f32 + 0.5), origin.y + px(text::CODE.1) * (row as f32 + 0.5))
+    }
+
+    fn on_scroll(&mut self, ev: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let line_h = px(text::CODE.1);
+        let dy = ev.delta.pixel_delta(line_h).y;
+        let lines = (dy / line_h).round() as i32;
+        if lines == 0 {
+            return;
+        }
+        let mode = *self.term.mode();
+        // The program wants the mouse: wheel buttons (64 up, 65 down).
+        if mode.intersects(TermMode::MOUSE_MODE) {
+            let button = if lines > 0 { 64 } else { 65 };
+            for _ in 0..lines.unsigned_abs().min(10) {
+                if let Some(bytes) = self.mouse_report(button, true, ev.position, &ev.modifiers) {
+                    self.write(bytes);
+                }
+            }
+            return;
+        }
+        // Full-screen program (less, man, git pager): the wheel becomes ↑/↓ (xterm "alternate scroll").
+        if mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL) {
+            let arrow: &[u8] = match (lines > 0, mode.contains(TermMode::APP_CURSOR)) {
+                (true, true) => b"\x1bOA",
+                (true, false) => b"\x1b[A",
+                (false, true) => b"\x1bOB",
+                (false, false) => b"\x1b[B",
+            };
+            self.write(arrow.repeat(lines.unsigned_abs().min(10) as usize));
+            return;
+        }
+        self.term.scroll_display(Scroll::Delta(lines));
+        cx.notify();
+    }
+
+    fn paste(&mut self, _: &TermPaste, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else { return };
+        let text = text.replace("\r\n", "\r").replace('\n', "\r");
+        let data = if self.term.mode().contains(TermMode::BRACKETED_PASTE) { format!("\x1b[200~{text}\x1b[201~") } else { text };
+        self.term.scroll_display(Scroll::Bottom);
+        self.write(data.into_bytes());
+    }
+
+    fn copy(&mut self, _: &TermCopy, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(s) = self.term.selection_to_string() {
+            cx.write_to_clipboard(ClipboardItem::new_string(s));
+        }
+    }
+
+    fn clear(&mut self, _: &TermClear, _: &mut Window, cx: &mut Context<Self>) {
+        self.clear_all(cx);
+    }
+
+    /// Clear scrollback and ask the shell to redraw the screen (Ctrl+L).
+    pub fn clear_all(&mut self, cx: &mut Context<Self>) {
+        self.term.grid_mut().clear_history();
+        self.write(b"\x0c".to_vec());
+        cx.notify();
+    }
+}
+
+/// Key → terminal bytes (xterm sequences). ⌘ keys are left to the app.
+pub fn key_to_bytes(k: &gpui::Keystroke, mode: TermMode) -> Option<Vec<u8>> {
+    let m = &k.modifiers;
+    if m.platform {
+        return None;
+    }
+    let app_cursor = mode.contains(TermMode::APP_CURSOR);
+    // xterm modifier code: 1 + shift + 2·alt + 4·ctrl
+    let modcode = 1 + m.shift as u8 + 2 * m.alt as u8 + 4 * m.control as u8;
+    let csi = |final_byte: char| -> Vec<u8> {
+        if modcode > 1 {
+            format!("\x1b[1;{modcode}{final_byte}").into_bytes()
+        } else if app_cursor {
+            format!("\x1bO{final_byte}").into_bytes()
+        } else {
+            format!("\x1b[{final_byte}").into_bytes()
+        }
+    };
+    let tilde = |n: u8| -> Vec<u8> { if modcode > 1 { format!("\x1b[{n};{modcode}~").into_bytes() } else { format!("\x1b[{n}~").into_bytes() } };
+    let bytes = match k.key.as_str() {
+        "enter" => b"\r".to_vec(),
+        "backspace" if m.alt => b"\x1b\x7f".to_vec(),
+        "backspace" if m.control => b"\x08".to_vec(),
+        "backspace" => b"\x7f".to_vec(),
+        "tab" if m.shift => b"\x1b[Z".to_vec(),
+        "tab" => b"\t".to_vec(),
+        "escape" => b"\x1b".to_vec(),
+        "up" => csi('A'),
+        "down" => csi('B'),
+        "right" => csi('C'),
+        "left" => csi('D'),
+        "home" => csi('H'),
+        "end" => csi('F'),
+        "insert" => tilde(2),
+        "delete" => tilde(3),
+        "pageup" => tilde(5),
+        "pagedown" => tilde(6),
+        "f1" => b"\x1bOP".to_vec(),
+        "f2" => b"\x1bOQ".to_vec(),
+        "f3" => b"\x1bOR".to_vec(),
+        "f4" => b"\x1bOS".to_vec(),
+        "f5" => tilde(15),
+        "f6" => tilde(17),
+        "f7" => tilde(18),
+        "f8" => tilde(19),
+        "f9" => tilde(20),
+        "f10" => tilde(21),
+        "f11" => tilde(23),
+        "f12" => tilde(24),
+        "space" if m.control => vec![0],
+        key if m.control && key.chars().count() == 1 => {
+            let ch = key.chars().next()?.to_ascii_lowercase();
+            match ch {
+                'a'..='z' => vec![ch as u8 - b'a' + 1],
+                '[' => vec![0x1b],
+                '\\' => vec![0x1c],
+                ']' => vec![0x1d],
+                '/' | '_' | '-' => vec![0x1f],
+                '2' | '@' => vec![0],
+                _ => return None,
+            }
+        }
+        _ => {
+            // Typed character (ğ, ş... on a Turkish keyboard; includes ones produced with ⌥ on macOS).
+            let typed = k.key_char.clone().or_else(|| (k.key.chars().count() == 1).then(|| k.key.clone()))?;
+            if k.key == "space" { b" ".to_vec() } else { typed.into_bytes() }
+        }
+    };
+    Some(bytes)
+}
+
+// --- Colors: ANSI palette from the theme's roles ---
+
+fn mix(a: u32, b: u32, t: f32) -> u32 {
+    let ch = |s: u32| {
+        let (x, y) = (((a >> s) & 0xff) as f32, ((b >> s) & 0xff) as f32);
+        ((x + (y - x) * t).round() as u32) << s
+    };
+    ch(16) | ch(8) | ch(0)
+}
+
+fn is_dark(p: &Palette) -> bool {
+    let l = |s: u32| ((p.bg >> s) & 0xff) as f32;
+    0.2126 * l(16) + 0.7152 * l(8) + 0.0722 * l(0) < 128.
+}
+
+fn named(p: &Palette, n: NamedColor) -> u32 {
+    let dark = is_dark(p);
+    let bright = |c: u32| if dark { mix(c, 0xffffff, 0.25) } else { mix(c, 0x000000, 0.15) };
+    let base = |i: usize| match i {
+        0 => {
+            if dark {
+                mix(p.bg, 0x000000, 0.4)
+            } else {
+                mix(p.text, 0xffffff, 0.15)
+            }
+        }
+        1 => p.danger,
+        2 => p.success,
+        3 => p.warning,
+        4 => p.syntax_function,
+        5 => p.syntax_keyword,
+        6 => p.syntax_type,
+        _ => {
+            if dark {
+                mix(p.text, p.bg, 0.15)
+            } else {
+                mix(p.text, p.bg, 0.3)
+            }
+        }
+    };
+    use NamedColor::*;
+    match n {
+        Black => base(0),
+        Red => base(1),
+        Green => base(2),
+        Yellow => base(3),
+        Blue => base(4),
+        Magenta => base(5),
+        Cyan => base(6),
+        White => base(7),
+        BrightBlack => p.text_muted,
+        BrightRed => bright(base(1)),
+        BrightGreen => bright(base(2)),
+        BrightYellow => bright(base(3)),
+        BrightBlue => bright(base(4)),
+        BrightMagenta => bright(base(5)),
+        BrightCyan => bright(base(6)),
+        BrightWhite => p.text,
+        Foreground | BrightForeground => p.text,
+        Background => p.bg,
+        Cursor => p.accent,
+        DimForeground => mix(p.text, p.bg, 0.4),
+        DimBlack | DimRed | DimGreen | DimYellow | DimBlue | DimMagenta | DimCyan | DimWhite => {
+            let i = n as usize - DimBlack as usize;
+            mix(base(i), p.bg, 0.4)
+        }
+    }
+}
+
+fn rgb(r: Rgb) -> u32 {
+    (r.r as u32) << 16 | (r.g as u32) << 8 | r.b as u32
+}
+
+fn resolve(p: &Palette, color: Color, overrides: &alacritty_terminal::term::color::Colors) -> u32 {
+    match color {
+        Color::Spec(r) => rgb(r),
+        Color::Named(n) => overrides[n].map(rgb).unwrap_or_else(|| named(p, n)),
+        Color::Indexed(i) => {
+            if let Some(r) = overrides[i as usize] {
+                return rgb(r);
+            }
+            match i {
+                0..=15 => {
+                    let names = [
+                        NamedColor::Black,
+                        NamedColor::Red,
+                        NamedColor::Green,
+                        NamedColor::Yellow,
+                        NamedColor::Blue,
+                        NamedColor::Magenta,
+                        NamedColor::Cyan,
+                        NamedColor::White,
+                        NamedColor::BrightBlack,
+                        NamedColor::BrightRed,
+                        NamedColor::BrightGreen,
+                        NamedColor::BrightYellow,
+                        NamedColor::BrightBlue,
+                        NamedColor::BrightMagenta,
+                        NamedColor::BrightCyan,
+                        NamedColor::BrightWhite,
+                    ];
+                    named(p, names[i as usize])
+                }
+                16..=231 => {
+                    // 6×6×6 color cube
+                    let i = i as u32 - 16;
+                    let v = |x: u32| if x == 0 { 0 } else { 55 + x * 40 };
+                    v(i / 36) << 16 | v((i / 6) % 6) << 8 | v(i % 6)
+                }
+                _ => {
+                    let g = 8 + (i as u32 - 232) * 10;
+                    g << 16 | g << 8 | g
+                }
+            }
+        }
+    }
+}
+
+// --- Drawing ---
+
+struct Run {
+    col: usize,
+    text: String,
+    fg: u32,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+}
+
+struct Frame {
+    rows: Vec<Vec<Run>>,
+    backgrounds: Vec<(usize, usize, usize, u32)>, // (row, start column, end, color)
+    cursor: Option<(usize, usize, CursorShape)>,
+    /// Link to underline: (row, start column, end).
+    link: Option<(usize, usize, usize)>,
+    cell_w: Pixels,
+}
+
+struct TerminalElement {
+    view: Entity<TerminalView>,
+    palette: Palette,
+    focused: bool,
+}
+
+impl IntoElement for TerminalElement {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for TerminalElement {
+    type RequestLayoutState = ();
+    type PrepaintState = Option<Frame>;
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(&mut self, _: Option<&GlobalElementId>, _: Option<&gpui::InspectorElementId>, window: &mut Window, cx: &mut App) -> (LayoutId, ()) {
+        let mut style = Style::default();
+        style.size.width = relative(1.).into();
+        style.size.height = relative(1.).into();
+        (window.request_layout(style, [], cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<Frame> {
+        let style = window.text_style();
+        let font_size = style.font_size.to_pixels(window.rem_size());
+        let probe = TextRun { len: 1, font: style.font(), color: c(self.palette.text).into(), background_color: None, underline: None, strikethrough: None };
+        let cell_w = window.text_system().shape_line("0".into(), font_size, &[probe], None).width;
+        let line_h = px(text::CODE.1);
+        let cols = ((bounds.size.width - px(16.)) / cell_w).floor().max(2.) as usize;
+        let rows = (bounds.size.height / line_h).floor().max(1.) as usize;
+        let origin = point(bounds.left() + px(8.), bounds.top());
+        self.view.update(cx, |v, _| {
+            v.set_size(cols, rows);
+            v.grid = (origin, cell_w);
+        });
+
+        let p = self.palette;
+        let view = self.view.read(cx);
+        let content = view.term.renderable_content();
+        let colors = content.colors;
+        let offset = content.display_offset as i32;
+        let selection = content.selection;
+        let mut frame = Frame {
+            rows: (0..rows).map(|_| Vec::new()).collect(),
+            backgrounds: Vec::new(),
+            cursor: None,
+            link: view.hover_link.clone().map(|(r, c)| (r, c.start, c.end)),
+            cell_w,
+        };
+        for cell in content.display_iter {
+            let row = (cell.point.line.0 + offset) as usize;
+            let col = cell.point.column.0;
+            if row >= rows || cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+            let (mut fg, mut bg) = (resolve(&p, cell.fg, colors), resolve(&p, cell.bg, colors));
+            if cell.flags.contains(Flags::INVERSE) {
+                std::mem::swap(&mut fg, &mut bg);
+            }
+            if cell.flags.contains(Flags::DIM) {
+                fg = mix(fg, p.bg, 0.4);
+            }
+            if cell.flags.contains(Flags::HIDDEN) {
+                fg = bg;
+            }
+            if selection.is_some_and(|s| s.contains(cell.point)) {
+                bg = p.selection;
+            }
+            if bg != p.bg {
+                let end = if cell.flags.contains(Flags::WIDE_CHAR) { col + 2 } else { col + 1 };
+                match frame.backgrounds.last_mut() {
+                    Some((r, _, e, color)) if *r == row && *e == col && *color == bg => *e = end,
+                    _ => frame.backgrounds.push((row, col, end, bg)),
+                }
+            }
+            let ch = if cell.c == '\0' || cell.c == '\t' { ' ' } else { cell.c };
+            let (bold, italic, underline) =
+                (cell.flags.contains(Flags::BOLD), cell.flags.contains(Flags::ITALIC), cell.flags.intersects(Flags::ALL_UNDERLINES));
+            let wide = cell.flags.contains(Flags::WIDE_CHAR);
+            let runs = &mut frame.rows[row];
+            // A wide character gets its own run: grid alignment must not break.
+            let extend = runs
+                .last_mut()
+                .filter(|r| !wide && r.fg == fg && r.bold == bold && r.italic == italic && r.underline == underline && r.col + r.text.chars().count() == col);
+            match extend {
+                Some(r) => r.text.push(ch),
+                None => runs.push(Run { col, text: ch.to_string(), fg, bold, italic, underline }),
+            }
+            if wide {
+                runs.push(Run { col: col + 2, text: String::new(), fg, bold, italic, underline });
+            }
+        }
+        let cur = content.cursor;
+        let cur_row = cur.point.line.0 + offset;
+        if cur.shape != CursorShape::Hidden && cur_row >= 0 && (cur_row as usize) < rows && view.exit.is_none() {
+            frame.cursor = Some((cur_row as usize, cur.point.column.0, cur.shape));
+        }
+        Some(frame)
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        frame: &mut Option<Frame>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let Some(frame) = frame.take() else { return };
+        let p = self.palette;
+        let line_h = px(text::CODE.1);
+        let origin = point(bounds.left() + px(8.), bounds.top());
+        let cell = |row: usize, col: usize| point(origin.x + frame.cell_w * col as f32, origin.y + line_h * row as f32);
+        for (row, a, b, color) in &frame.backgrounds {
+            window.paint_quad(fill(Bounds::new(cell(*row, *a), size(frame.cell_w * (b - a) as f32, line_h)), c(*color)));
+        }
+        let style = window.text_style();
+        let font_size = style.font_size.to_pixels(window.rem_size());
+        for (row, runs) in frame.rows.iter().enumerate() {
+            for run in runs.iter().filter(|r| !r.text.trim().is_empty()) {
+                let mut font = style.font();
+                if run.bold {
+                    font.weight = FontWeight::BOLD;
+                }
+                if run.italic {
+                    font.style = FontStyle::Italic;
+                }
+                let tr = TextRun {
+                    len: run.text.len(),
+                    font,
+                    color: c(run.fg).into(),
+                    background_color: None,
+                    underline: run.underline.then(|| gpui::UnderlineStyle { color: Some(c(run.fg).into()), thickness: px(1.), wavy: false }),
+                    strikethrough: None,
+                };
+                let shaped = window.text_system().shape_line(run.text.clone().into(), font_size, &[tr], None);
+                let _ = shaped.paint(cell(row, run.col), line_h, window, cx);
+            }
+        }
+        if let Some((row, a, b)) = frame.link {
+            let at = cell(row, a);
+            window.paint_quad(fill(Bounds::new(point(at.x, at.y + line_h - px(2.)), size(frame.cell_w * (b - a) as f32, px(1.))), c(p.accent)));
+        }
+        if let Some((row, col, shape)) = frame.cursor {
+            let at = cell(row, col);
+            let color = c(p.accent);
+            let quad = match (shape, self.focused) {
+                (_, false) | (CursorShape::HollowBlock, _) => gpui::outline(Bounds::new(at, size(frame.cell_w, line_h)), color, gpui::BorderStyle::Solid),
+                (CursorShape::Beam, true) => fill(Bounds::new(at, size(px(2.), line_h)), color),
+                (CursorShape::Underline, true) => fill(Bounds::new(point(at.x, at.y + line_h - px(2.)), size(frame.cell_w, px(2.))), color),
+                _ => fill(Bounds::new(at, size(frame.cell_w, line_h)), crate::ui::ca(p.accent, 0.6)),
+            };
+            window.paint_quad(quad);
+        }
+    }
+}
+
+impl Render for TerminalView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = *palette(cx);
+        let focused = self.focus_handle.is_focused(window);
+        let exit_line = self.exit.map(|code| match code {
+            Some(c) => crate::i18n::tf("Process exited with code {}. Press any key to close.", &[&c]),
+            None => crate::i18n::t("Process ended. Press any key to close.").to_string(),
+        });
+        div()
+            .id("terminal")
+            .key_context("Terminal")
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::paste))
+            .on_action(cx.listener(Self::copy))
+            .on_action(cx.listener(Self::clear))
+            .on_key_down(cx.listener(Self::on_key_down))
+            .on_scroll_wheel(cx.listener(Self::on_scroll))
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .when(self.hover_link.is_some(), |d| d.cursor(gpui::CursorStyle::PointingHand))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, ev, _, _| this.on_mouse_up(ev)))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, ev, _, _| this.on_mouse_up(ev)))
+            .relative()
+            .size_full()
+            .bg(c(p.bg))
+            .font_family(MONO_FONT)
+            .text_size(px(text::CODE.0))
+            .line_height(px(text::CODE.1))
+            .text_color(c(p.text))
+            .child(TerminalElement { view: cx.entity(), palette: p, focused })
+            .when_some(self.error.clone().or(exit_line.map(Into::into)), |d, msg| {
+                d.child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .px(px(theme::SPACE[5]))
+                        .py(px(theme::SPACE[2]))
+                        .bg(c(p.surface_raised))
+                        .text_color(c(p.text_muted))
+                        .child(msg),
+                )
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_terminal_that_cannot_keep_up_drops_output_instead_of_growing_without_bound() {
+        let b = OutputBacklog::default();
+        assert!(b.admit(MAX_BACKLOG - 10));
+        assert!(b.admit(10), "exactly at the limit is fine");
+        assert!(!b.admit(1), "over the limit is dropped");
+        assert!(!b.admit(1_000_000));
+        assert!(b.take_dropped(), "the user is told once");
+        assert!(!b.take_dropped());
+        // After the UI catches up, output flows again.
+        b.consumed(MAX_BACKLOG);
+        assert!(b.admit(4096));
+    }
+
+    /// Fault injection, slow consumer, through the real gate: 256 MB of output arrives while the UI reads nothing. At most
+    /// `MAX_BACKLOG` bytes are held, the UI is told output was dropped, and the exit event still arrives after the output.
+    #[test]
+    fn a_flood_behind_a_stalled_terminal_is_capped_and_the_exit_is_kept() {
+        let (tx, rx) = std::sync::mpsc::channel::<PtyEvent>();
+        let backlog = Arc::new(OutputBacklog::default());
+        let gate = backlog.clone();
+        let mut out = crate::ui::bridge_with(rx, move |ev| match ev {
+            PtyEvent::Output(d) => gate.admit(d.len()),
+            PtyEvent::Exit(_) => true,
+        });
+        let chunk = vec![b'y'; 64 * 1024];
+        for _ in 0..4096 {
+            tx.send(PtyEvent::Output(chunk.clone())).unwrap();
+        }
+        tx.send(PtyEvent::Exit(Some(0))).unwrap();
+        drop(tx);
+        // The UI reads nothing until the gate has started refusing output (it must, 256 MB > 32 MB).
+        let start = std::time::Instant::now();
+        while !backlog.dropped.load(std::sync::atomic::Ordering::Relaxed) && start.elapsed() < std::time::Duration::from_secs(30) {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(backlog.dropped.load(std::sync::atomic::Ordering::Relaxed), "the gate never refused anything");
+        let peak = backlog.pending.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(peak <= MAX_BACKLOG, "{peak} bytes were held while the UI stalled");
+        let (mut held, mut exit) = (0usize, None);
+        while exit.is_none() && start.elapsed() < std::time::Duration::from_secs(30) {
+            match out.try_recv() {
+                Ok(PtyEvent::Output(d)) => {
+                    held += d.len();
+                    backlog.consumed(d.len());
+                }
+                Ok(PtyEvent::Exit(code)) => exit = Some(code),
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(2)),
+            }
+        }
+        assert_eq!(exit, Some(Some(0)), "the exit event is never dropped");
+        assert!(held >= MAX_BACKLOG - chunk.len(), "output up to the cap is delivered ({held})");
+        assert!(backlog.take_dropped(), "the user is told");
+    }
+
+    #[test]
+    fn bridge_with_discards_what_the_gate_refuses() {
+        let (tx, rx) = std::sync::mpsc::channel::<u32>();
+        let mut out = crate::ui::bridge_with(rx, |n| n % 2 == 0);
+        for i in 0..6 {
+            tx.send(i).unwrap();
+        }
+        drop(tx);
+        let got: Vec<u32> = futures::executor::block_on(async {
+            use futures::StreamExt;
+            out.by_ref().collect().await
+        });
+        assert_eq!(got, [0, 2, 4]);
+    }
+    use gpui::Keystroke;
+
+    fn bytes(k: &str, mode: TermMode) -> Option<Vec<u8>> {
+        key_to_bytes(&Keystroke::parse(k).unwrap(), mode)
+    }
+
+    #[test]
+    fn keys_map_to_xterm_sequences() {
+        let m = TermMode::empty();
+        assert_eq!(bytes("enter", m).unwrap(), b"\r");
+        assert_eq!(bytes("ctrl-c", m).unwrap(), [3]);
+        assert_eq!(bytes("up", m).unwrap(), b"\x1b[A");
+        assert_eq!(bytes("up", TermMode::APP_CURSOR).unwrap(), b"\x1bOA", "vim/less uygulama modu");
+        assert_eq!(bytes("shift-right", m).unwrap(), b"\x1b[1;2C");
+        assert_eq!(bytes("ctrl-delete", m).unwrap(), b"\x1b[3;5~");
+        assert_eq!(bytes("alt-backspace", m).unwrap(), b"\x1b\x7f");
+        assert!(bytes("cmd-v", m).is_none(), "⌘ keys are left to the app");
+    }
+
+    #[test]
+    fn windows_turkish_characters_are_sent_as_utf8() {
+        for ch in ['ı', 'İ', 'ş', 'ğ', 'ü', 'ö', 'ç', '@', '{', '}', '[', ']', '\\', '|', '€'] {
+            // GPUI resolves AltGr to a text character before dispatching the key.
+            let mut key = Keystroke::parse("a").unwrap();
+            key.key_char = Some(ch.to_string());
+            assert_eq!(key_to_bytes(&key, TermMode::empty()).unwrap(), ch.to_string().as_bytes());
+        }
+    }
+
+    #[test]
+    fn ansi_cube_and_grayscale() {
+        let p = theme::DARK;
+        let o = alacritty_terminal::term::color::Colors::default();
+        assert_eq!(resolve(&p, Color::Indexed(196), &o), 0xff0000);
+        assert_eq!(resolve(&p, Color::Indexed(232), &o), 0x080808);
+        assert_eq!(resolve(&p, Color::Spec(Rgb { r: 1, g: 2, b: 3 }), &o), 0x010203);
+        assert_eq!(resolve(&p, Color::Named(NamedColor::Red), &o), p.danger);
+    }
+}

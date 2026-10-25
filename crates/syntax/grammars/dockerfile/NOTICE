@@ -1,0 +1,2 @@
+tree-sitter-dockerfile 0.2.0, MIT, https://github.com/camdencheek/tree-sitter-dockerfile
+parser.c and scanner.c are copied unchanged (the crate itself pulls in an older tree-sitter runtime).
