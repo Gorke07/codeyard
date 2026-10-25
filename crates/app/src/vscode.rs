@@ -516,9 +516,12 @@ mod tests {
 /// `cargo test -p app real_vscode_files -- --ignored --nocapture`
 #[cfg(test)]
 #[test]
-#[ignore]
+#[ignore = "reads the developer's real VS Code settings; manual dry run, prints a report, asserts nothing"]
 fn real_vscode_files() {
-    let Some(dir) = user_dir() else { return };
+    let Some(dir) = user_dir() else {
+        eprintln!("real_vscode_files: no VS Code user directory on this machine, nothing was checked");
+        return;
+    };
     if let Ok(t) = std::fs::read_to_string(dir.join("settings.json")) {
         let c = convert_settings(&t, &[]);
         eprintln!("settings: {} imported, {} unmapped; notes: {:?}", c.settings.len(), c.skipped, c.notes);

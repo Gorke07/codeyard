@@ -88,7 +88,8 @@ struct Script {
 #[test]
 fn ssh_questions_reach_the_window_and_answers_reach_ssh() {
     let Some(fx) = start() else {
-        eprintln!("skipped: no /usr/sbin/sshd or ssh-keygen");
+        assert!(std::env::var_os("CODEYARD_REQUIRE_SSHD").is_none(), "no /usr/sbin/sshd or ssh-keygen and CODEYARD_REQUIRE_SSHD is set");
+        eprintln!("SKIPPED: no /usr/sbin/sshd or ssh-keygen (set CODEYARD_REQUIRE_SSHD=1 to make this an error)");
         return;
     };
     let home = fx.dir.join("home");

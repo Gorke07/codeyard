@@ -1085,7 +1085,7 @@ mod identity_tests {
         let dir = std::env::temp_dir().join(format!("codeyard-identity-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let run = |args: &[&str]| std::process::Command::new("git").args(args).current_dir(&dir).output().is_ok_and(|o| o.status.success());
+        let run = |args: &[&str]| crate::test_git::git().args(args).current_dir(&dir).output().is_ok_and(|o| o.status.success());
         if !run(&["init", "-q"]) {
             return;
         }
@@ -1143,15 +1143,7 @@ mod identity_tests {
         let dir = std::env::temp_dir().join(format!("codeyard-hunk-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let run = |args: &[&str]| {
-            std::process::Command::new("git")
-                .args(["-c", "user.name=T", "-c", "user.email=t@e.x", "-c", "init.defaultBranch=main"])
-                .args(args)
-                .current_dir(&dir)
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-        };
+        let run = |args: &[&str]| crate::test_git::git().args(args).current_dir(&dir).output().ok().filter(|o| o.status.success());
         if run(&["init", "-q"]).is_none() {
             return;
         }
@@ -1179,8 +1171,7 @@ mod identity_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let d = dir.clone();
         let run = move |args: &[&str]| {
-            std::process::Command::new("git")
-                .args(["-c", "user.name=T", "-c", "user.email=t@e.x", "-c", "init.defaultBranch=main"])
+            crate::test_git::git()
                 .args(args)
                 .current_dir(&d)
                 .output()
@@ -1294,7 +1285,7 @@ mod identity_tests {
         let Some((dir, run)) = repo("remotes") else { return };
         let bare = std::env::temp_dir().join(format!("codeyard-bare-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&bare);
-        std::process::Command::new("git").args(["init", "-q", "--bare"]).arg(&bare).output().unwrap();
+        crate::test_git::git().args(["init", "-q", "--bare"]).arg(&bare).output().unwrap();
         let host = host::local();
         let root = dir.to_string_lossy().into_owned();
         assert!(publish_branch(&host, &root).unwrap_err().contains("no remote"));
@@ -1406,7 +1397,7 @@ mod identity_tests {
         assert_eq!(list.len(), 2);
         assert!(list.iter().any(|(_, b)| b.as_deref() == Some("wt-new")));
         assert!(wt.join("f.txt").exists() || wt.exists());
-        let _ = std::process::Command::new("git").args(["worktree", "remove", "--force"]).arg(&wt).current_dir(&dir).output();
+        let _ = crate::test_git::git().args(["worktree", "remove", "--force"]).arg(&wt).current_dir(&dir).output();
         assert_eq!(
             parse_worktrees("worktree /a\nHEAD x\nbranch refs/heads/main\n\nworktree /b\nHEAD y\ndetached\n"),
             vec![("/a".to_string(), Some("main".to_string())), ("/b".to_string(), None)]
@@ -1425,7 +1416,7 @@ mod identity_tests {
             run(&["commit", "-q", "-m", name]).unwrap();
         };
         let index = |name: &str| {
-            let o = std::process::Command::new("git").args(["show", &format!(":{name}")]).current_dir(&dir).output().unwrap();
+            let o = crate::test_git::git().args(["show", &format!(":{name}")]).current_dir(&dir).output().unwrap();
             o.stdout
         };
         // Mixed line endings: unchanged line stays as is, the new line uses the dominant (CRLF) style.

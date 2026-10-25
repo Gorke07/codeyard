@@ -1038,10 +1038,8 @@ fn logs_follow_automatically_and_can_be_filtered(cx: &mut TestAppContext) {
     wb.update_in(cx, |wb, window, cx| wb.filter_log_for_test(log.to_str().unwrap(), "zzz-nothing", window, cx));
     wait_ticking(cx, "no match notice", |cx| crate::qa_integration_tests::notice(&wb, cx).contains("No lines match"));
     wb.update_in(cx, |wb, window, cx| wb.filter_log_for_test(log.to_str().unwrap(), "(unclosed", window, cx));
-    wait_ticking(cx, "bad pattern", |cx| {
-        let n = crate::qa_integration_tests::notice(&wb, cx);
-        !n.contains("No lines") && !n.starts_with("Filtering") && !n.contains("match")
-    });
+    // Positive match: grep's own wording differs (BSD "parentheses not balanced", GNU "Unmatched ( or \(", which contains "match").
+    wait_ticking(cx, "bad pattern", |cx| crate::qa_integration_tests::notice(&wb, cx).contains("is not a valid regular expression"));
 }
 
 /// Editing a host changes only that block of the fixture's ssh config; the fixture alias still resolves.

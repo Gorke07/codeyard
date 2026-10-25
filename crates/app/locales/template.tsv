@@ -215,6 +215,7 @@ Could not forward the debug port over SSH: {}
 Could not install the {0} dictionary: {1}.	
 Could not install the {0} dictionary: {1}. Check your internet connection and try again.	
 Could not list branches: {}	
+Could not list files: {}	
 Could not list stashes: {}	
 Could not list: {}	
 Could not load: {}	

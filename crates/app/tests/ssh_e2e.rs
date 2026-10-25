@@ -1,7 +1,7 @@
 //! The real remote path: system `ssh` + a temporary `sshd` running on 127.0.0.1
 //! on this machine with user privileges. Connect → upload agent (SHA-256) → daemon → file, command,
 //! terminal → port forwarding (over ControlMaster) → cancel.
-//! Skipped if sshd or the agent binary is missing.
+//! Skipped (loudly) if sshd or the agent binary is missing; CODEYARD_REQUIRE_SSHD=1 makes that a failure.
 #![cfg(unix)]
 
 use std::io::{Read, Write};
@@ -24,11 +24,13 @@ fn agent_dir() -> Option<PathBuf> {
 fn connect_upload_use_and_forward_over_real_ssh() {
     let sshd = Path::new("/usr/sbin/sshd");
     let Some(agents) = agent_dir() else {
-        eprintln!("codeyard-agent not built, skipped (cargo build -p agent)");
+        assert!(std::env::var_os("CODEYARD_REQUIRE_SSHD").is_none(), "codeyard-agent not built and CODEYARD_REQUIRE_SSHD is set");
+        eprintln!("SKIPPED: codeyard-agent not built (cargo build -p agent; set CODEYARD_REQUIRE_SSHD=1 to make this an error)");
         return;
     };
     if !sshd.exists() {
-        eprintln!("no sshd, skipped");
+        assert!(std::env::var_os("CODEYARD_REQUIRE_SSHD").is_none(), "no /usr/sbin/sshd and CODEYARD_REQUIRE_SSHD is set");
+        eprintln!("SKIPPED: no /usr/sbin/sshd (set CODEYARD_REQUIRE_SSHD=1 to make this an error)");
         return;
     }
     let dir = std::env::temp_dir().join(format!("codeyard-sshe2e-{}", std::process::id()));

@@ -332,7 +332,7 @@ fn wait_for(cx: &mut VisualTestContext, what: &str, mut done: impl FnMut(&mut Vi
         if done(cx) {
             return;
         }
-        assert!(start.elapsed() < std::time::Duration::from_secs(10), "timed out: {what}");
+        assert!(start.elapsed() < std::time::Duration::from_secs(10 * crate::test_sshd::timeout_scale()), "timed out: {what}");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
@@ -1547,15 +1547,7 @@ fn word_keys_clicks_and_undo_to_clean(cx: &mut TestAppContext) {
 /// A small committed repo; `None` if `git` is missing (the test is skipped).
 pub(crate) fn git_repo(name: &str) -> Option<PathBuf> {
     let dir = project(name);
-    let run = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(["-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "init.defaultBranch=main"])
-            .args(args)
-            .current_dir(&dir)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-    };
+    let run = |args: &[&str]| crate::test_git::git().args(args).current_dir(&dir).output().ok().filter(|o| o.status.success());
     run(&["init", "-q"])?;
     run(&["add", "-A"])?;
     run(&["commit", "-q", "-m", "ilk"])?;
@@ -1591,12 +1583,7 @@ fn git_status_marks_tree_and_gutter(cx: &mut TestAppContext) {
     wait_for(cx, "eklenen satır", |cx| ed.read_with(cx, |e, _| e.git_marks().get(10).copied().flatten() == Some(LineMark::Added)));
 
     // External commit (as from a terminal): .git/index is watched, the marks go away.
-    let ok = std::process::Command::new("git")
-        .args(["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qam", "ikinci"])
-        .current_dir(&dir)
-        .status()
-        .unwrap()
-        .success();
+    let ok = crate::test_git::git().args(["commit", "-qam", "ikinci"]).current_dir(&dir).status().unwrap().success();
     assert!(ok);
     wait_for(cx, "commit sonrası", |cx| {
         cx.executor().advance_clock(std::time::Duration::from_millis(500));
@@ -1834,7 +1821,7 @@ fn source_control_stage_diff_commit(cx: &mut TestAppContext) {
         "{:?}",
         scm.read_with(cx, |s, _| s.result_text())
     );
-    let log = std::process::Command::new("git").args(["log", "-1", "--format=%s"]).current_dir(&dir).output().unwrap();
+    let log = crate::test_git::git().args(["log", "-1", "--format=%s"]).current_dir(&dir).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&log.stdout).trim(), "README güncellendi");
 
     // An empty message is rejected; discard deletes the untracked file.
@@ -1853,6 +1840,7 @@ fn has_clangd() -> bool {
 #[gpui::test]
 fn language_server_diagnostics_follow_edits(cx: &mut TestAppContext) {
     if !has_clangd() {
+        crate::test_sshd::skip_missing("clangd");
         return;
     }
     let dir = std::env::temp_dir().join(format!("codeyard-e2e-lsp-{}", std::process::id()));
@@ -1886,6 +1874,7 @@ fn language_server_diagnostics_follow_edits(cx: &mut TestAppContext) {
 #[gpui::test]
 fn language_server_completion_hover_definition(cx: &mut TestAppContext) {
     if !has_clangd() {
+        crate::test_sshd::skip_missing("clangd");
         return;
     }
     let dir = std::env::temp_dir().join(format!("codeyard-e2e-lsp2-{}", std::process::id()));
@@ -2293,6 +2282,7 @@ fn line_commands_pairs_and_zoom(cx: &mut TestAppContext) {
 #[gpui::test]
 fn language_server_rename_references_symbols_fix_format_signature(cx: &mut TestAppContext) {
     if !has_clangd() {
+        crate::test_sshd::skip_missing("clangd");
         return;
     }
     let dir = std::env::temp_dir().join(format!("codeyard-e2e-lsp3-{}", std::process::id()));
@@ -2909,12 +2899,7 @@ fn wait_ticking(cx: &mut VisualTestContext, what: &str, mut done: impl FnMut(&mu
 
 /// Git command in a temp directory (identity and default branch fixed for tests).
 fn git_in(dir: &std::path::Path, args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .args(["-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "init.defaultBranch=main"])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
+    let out = crate::test_git::git().args(args).current_dir(dir).output().unwrap();
     assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
@@ -3823,7 +3808,7 @@ fn merge_conflicts_resolve_navigate_and_guard_staging(cx: &mut TestAppContext) {
     git_in(&dir, &["checkout", "-q", "main"]);
     std::fs::write(dir.join("a.txt"), base.replace("satır 2\n", "ana 2\n").replace("satır 10\n", "ana 10\n")).unwrap();
     git_in(&dir, &["commit", "-q", "-am", "ana"]);
-    let merge = std::process::Command::new("git").args(["merge", "-q", "özellik"]).current_dir(&dir).output().unwrap();
+    let merge = crate::test_git::git().args(["merge", "-q", "özellik"]).current_dir(&dir).output().unwrap();
     assert!(!merge.status.success(), "conflict expected");
 
     let (wb, cx) = setup(cx);
@@ -4028,7 +4013,7 @@ fn stage_and_revert_change_at_cursor(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     wb.update_in(cx, |wb, window, cx| wb.run_command_for_test("Git: Stage Change at Cursor", window, cx));
     let staged = || {
-        let o = std::process::Command::new("git").args(["show", ":src/lib.rs"]).current_dir(&dir).output().unwrap();
+        let o = crate::test_git::git().args(["show", ":src/lib.rs"]).current_dir(&dir).output().unwrap();
         String::from_utf8(o.stdout).unwrap()
     };
     wait_for(cx, "index", |_| staged().contains("DEĞİŞTİ 3"));
@@ -4080,8 +4065,7 @@ fn next_change_wraps_and_close_saved_keeps_dirty(cx: &mut TestAppContext) {
 fn git_branch_commands_through_the_palette(cx: &mut TestAppContext) {
     let Some(dir) = git_repo("branchcmds") else { return };
     let dir = std::fs::canonicalize(dir).unwrap();
-    let git =
-        |args: &[&str]| std::process::Command::new("git").args(["-c", "user.name=T", "-c", "user.email=t@e.x"]).args(args).current_dir(&dir).output().unwrap();
+    let git = |args: &[&str]| crate::test_git::git().args(args).current_dir(&dir).output().unwrap();
     git(&["branch", "side"]);
     let (wb, cx) = setup(cx);
     open(&wb, &dir, cx);

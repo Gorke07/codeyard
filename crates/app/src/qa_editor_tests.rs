@@ -893,6 +893,7 @@ fn qa_perf_50k_lines(cx: &mut TestAppContext) {
     // The budget is one frame (60 Hz) and only meaningful in release: debug builds are 10-20x
     // slower and affected by the load of parallel tests. `cargo test --release -- qa_perf`.
     if cfg!(debug_assertions) {
+        eprintln!("SKIPPED the frame-budget assertion: debug build (run `cargo test --release -- qa_perf`)");
         return;
     }
     let budget = 16.7;

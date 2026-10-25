@@ -90,6 +90,8 @@ mod ssh_error_tests;
 mod sysopen;
 mod terminal;
 #[cfg(test)]
+mod test_git;
+#[cfg(test)]
 mod test_sshd;
 mod testrun;
 #[cfg(test)]

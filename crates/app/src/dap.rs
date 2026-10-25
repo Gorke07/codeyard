@@ -1022,6 +1022,7 @@ while True:
     #[test]
     fn session_runs_to_a_breakpoint_steps_and_finishes() {
         if std::process::Command::new("python3").arg("-V").output().is_err() {
+            crate::test_sshd::skip_missing("python3");
             return;
         }
         let dir = std::env::temp_dir().join(format!("codeyard-dap-{}", std::process::id()));
@@ -1071,6 +1072,7 @@ while True:
     #[test]
     fn launch_failure_is_reported_with_the_adapters_message() {
         if std::process::Command::new("python3").arg("-V").output().is_err() {
+            crate::test_sshd::skip_missing("python3");
             return;
         }
         let dir = std::env::temp_dir().join(format!("codeyard-dap-fail-{}", std::process::id()));

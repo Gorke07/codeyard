@@ -80,10 +80,15 @@ fn violations(source: &str) -> Vec<(usize, String)> {
             in_tests |= (trimmed.starts_with("mod ") || trimmed.starts_with("pub mod ") || trimmed.starts_with("pub(crate) mod ")) && trimmed.ends_with('{');
             after_cfg_test = false;
         }
-        if in_tests || trimmed.starts_with("//") || line.contains("i18n-keep") || is_wrapped(line) {
+        if in_tests || trimmed.starts_with("//") || line.contains("i18n-keep") {
             continue;
         }
+        let wrapped = is_wrapped(line);
         for sink in SINKS {
+            // A `t(` elsewhere on the line must not hide a bare literal that sits directly in the sink; only `confirm(`/`show_input(` (first literal may be inside `t(…)`) take the line-wide check.
+            if wrapped && !sink.ends_with('"') {
+                continue;
+            }
             let Some(at) = line.find(sink) else { continue };
             let after = if sink.ends_with('"') { at + sink.len() - 1 } else { at + sink.len() };
             if first_literal(line, after).is_some_and(has_words) {
@@ -102,14 +107,8 @@ fn user_visible_text_goes_through_the_translation_system() {
     for entry in std::fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        // Test files, the translation infrastructure and the command palette (labels are translated at display time) are out of scope.
-        if !name.ends_with(".rs")
-            || name == "tests.rs"
-            || name.ends_with("_tests.rs")
-            || name.starts_with("i18n")
-            || name == "workbench_palette.rs"
-            || name == "main.rs"
-        {
+        // Test files and the translation infrastructure are out of scope. The command palette is scanned too: its labels go through `t()` at display time, but its notices do not.
+        if !name.ends_with(".rs") || name == "tests.rs" || name.ends_with("_tests.rs") || name.starts_with("i18n") || name == "main.rs" {
             continue;
         }
         let text = std::fs::read_to_string(&path).unwrap();
@@ -147,6 +146,9 @@ fn the_scanner_flags_bare_text_and_accepts_the_documented_exceptions() {
     assert!(!flagged(r#"// d.child("Not a call")"#));
     // `tr(` counts as a translation call only on its own: names like `str(`/`attr(` do not
     assert!(flagged(r#"d.child("Hello").attr("x")"#));
+    // a translated call elsewhere on the line does not excuse a bare literal in a direct sink
+    assert!(flagged(r#"d.child("Hello there").child(t("Other"))"#));
+    assert!(!flagged(r#"self.confirm(window, t("Delete it?"), t("Cannot be undone."), t("Delete"), cx, f);"#));
     // the test module is not scanned...
     assert!(!flagged("#[cfg(test)]\nmod tests {\n    fn f() { d.child(\"Bare\"); }\n}\n"));
     // ...but a `#[cfg(test)]` marking a single test helper does not hide the rest of the file

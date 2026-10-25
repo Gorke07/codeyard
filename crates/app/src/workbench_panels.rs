@@ -341,6 +341,7 @@ impl Workbench {
                         || first.contains("brackets")
                         || first.contains("repetition")
                         || first.contains("Unmatched")
+                        || first.contains("Missing")
                         || first.contains("invalid")
                         || first.contains("Invalid")
                     {

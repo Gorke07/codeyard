@@ -65,8 +65,10 @@ fn the_keys_table_in_the_user_guide_matches_the_real_key_bindings(cx: &mut TestA
 fn the_documented_themes_are_the_built_in_themes() {
     let guide = read_doc("user-guide.md");
     let built = theme::themes::builtin();
+    // The "Built in:" paragraph, not the whole guide: a name used in a colour-customization example elsewhere must not count as documented.
+    let list = guide.split("\nBuilt in:").nth(1).and_then(|t| t.split("Every built-in").next()).expect("the guide's “Built in:” theme paragraph");
     for t in &built {
-        assert!(guide.contains(&t.name), "theme “{}” is built in but not mentioned in docs/user-guide.md", t.name);
+        assert!(list.contains(&t.name), "theme “{}” is built in but not listed in the “Built in:” paragraph of docs/user-guide.md", t.name);
     }
     let count = built.len();
     assert!(guide.contains(&format!("pick one of {count} themes")), "the guide must say “pick one of {count} themes” (the built-in count)");

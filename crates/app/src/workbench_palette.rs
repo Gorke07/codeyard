@@ -408,7 +408,7 @@ impl Workbench {
                                 .ok();
                         }
                         Err(e) => {
-                            this.notice = Some(Notice::Error(format!("Could not list files: {e}").into()));
+                            this.notice = Some(Notice::Error(crate::i18n::tf("Could not list files: {}", &[&e]).into()));
                             weak_picker.update(cx, |p, cx| p.set_paths(0, Vec::new(), false, cx)).ok();
                             cx.notify();
                         }

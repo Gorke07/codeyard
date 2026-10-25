@@ -655,6 +655,7 @@ History of {}	{} geçmişi
 {} changed no files (merge or empty commit).	{} hiçbir dosyayı değiştirmedi (birleştirme ya da boş commit).
 Could not list stashes: {}	Stash'ler listelenemedi: {}
 Could not list branches: {}	Dallar listelenemedi: {}
+Could not list files: {}	Dosyalar listelenemedi: {}
 Could not list: {}	Listelenemedi: {}
 Switched to {}	{} dalına geçildi
 Could not switch to {0}: {1}	{0} dalına geçilemedi: {1}

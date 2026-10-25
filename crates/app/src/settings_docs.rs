@@ -125,6 +125,23 @@ mod tests {
                 }
             }
         }
+        // A new reader method (`r.something("key")`) that is not in the list above would hide its keys from this test: fail instead.
+        let known = ["bool", "choice", "number", "numbers", "strings", "string", "code_actions"];
+        let mut unknown_methods = std::collections::BTreeSet::new();
+        for (at, _) in src.match_indices("r.") {
+            if src[..at].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                continue;
+            }
+            let rest = &src[at + 2..];
+            let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            if rest[name.len()..].starts_with("(\"") && !known.contains(&name.as_str()) {
+                unknown_methods.insert(name);
+            }
+        }
+        assert!(
+            unknown_methods.is_empty(),
+            "settings.rs reads keys through reader methods this test does not scan: {unknown_methods:?} (add them to the list)"
+        );
         for k in ["files.associations", "workbench.colorCustomizations", "lsp.servers", "spelling.languages", "json.schemas", "yaml.schemas"] {
             parsed.insert(k.to_string());
         }

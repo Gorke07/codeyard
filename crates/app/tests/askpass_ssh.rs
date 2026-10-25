@@ -18,7 +18,8 @@ fn keygen(path: &Path, passphrase: &str) {
 fn ssh_asks_host_key_and_passphrase_through_app() {
     let sshd = Path::new("/usr/sbin/sshd");
     if !sshd.exists() {
-        eprintln!("no sshd, skipped");
+        assert!(std::env::var_os("CODEYARD_REQUIRE_SSHD").is_none(), "no /usr/sbin/sshd and CODEYARD_REQUIRE_SSHD is set");
+        eprintln!("SKIPPED: no /usr/sbin/sshd (set CODEYARD_REQUIRE_SSHD=1 to make this an error)");
         return;
     }
     let dir = std::env::temp_dir().join(format!("codeyard-sshd-{}", std::process::id()));

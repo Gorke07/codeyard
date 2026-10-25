@@ -789,9 +789,12 @@ mod preview {
 
     /// `GRAPH_SVG=/path.svg cargo test dump_graph_svg -- --ignored`: dumps the layout to SVG (for eyeballing).
     #[test]
-    #[ignore]
+    #[ignore = "manual: writes an SVG for eyeballing the layout, asserts nothing; needs GRAPH_SVG=<path>"]
     fn dump_graph_svg() {
-        let Ok(out) = std::env::var("GRAPH_SVG") else { return };
+        let Ok(out) = std::env::var("GRAPH_SVG") else {
+            eprintln!("dump_graph_svg: GRAPH_SVG is not set, nothing was written");
+            return;
+        };
         let c = |h: &str, p: &[&str]| GraphCommit {
             hash: h.into(),
             short: h.into(),

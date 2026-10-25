@@ -52,13 +52,14 @@ fn open(wb: &Entity<Workbench>, path: &Path, cx: &mut VisualTestContext) {
 }
 
 pub(crate) fn wait_secs(cx: &mut VisualTestContext, secs: u64, what: &str, mut done: impl FnMut(&mut VisualTestContext) -> bool) {
+    let limit = Duration::from_secs(secs * crate::test_sshd::timeout_scale());
     let start = std::time::Instant::now();
     loop {
         cx.run_until_parked();
         if done(cx) {
             return;
         }
-        assert!(start.elapsed() < Duration::from_secs(secs), "timeout: {what}");
+        assert!(start.elapsed() < limit, "timeout: {what}");
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -76,12 +77,7 @@ pub(crate) fn wait_ticking(cx: &mut VisualTestContext, what: &str, mut done: imp
 }
 
 pub(crate) fn git_in(dir: &Path, args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .args(["-c", "user.name=QA", "-c", "user.email=qa@example.com", "-c", "init.defaultBranch=main", "-c", "core.hooksPath=.git/hooks"])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
+    let out = crate::test_git::git().args(["-c", "core.hooksPath=.git/hooks"]).args(args).current_dir(dir).output().unwrap();
     assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
@@ -355,6 +351,7 @@ while True:
 #[gpui::test]
 fn qa_lsp_crash_loop_by_signal_is_bounded(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-lspcrash");
@@ -424,6 +421,7 @@ fn has_clangd() -> bool {
 #[gpui::test]
 fn qa_lsp_snippet_placeholder_is_selected(cx: &mut TestAppContext) {
     if !has_clangd() {
+        crate::test_sshd::skip_missing("clangd");
         return;
     }
     let dir = qa_dir("qa-snippet");
@@ -461,6 +459,7 @@ fn qa_lsp_snippet_placeholder_is_selected(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_lsp_format_on_save(cx: &mut TestAppContext) {
     if !has_clangd() {
+        crate::test_sshd::skip_missing("clangd");
         return;
     }
     let dir = qa_dir("qa-fmtsave");
@@ -484,6 +483,7 @@ fn qa_lsp_format_on_save(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_lsp_code_actions_on_save(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-actionsave");
@@ -628,6 +628,7 @@ pub(crate) fn c_server(script: &Path) -> Vec<(String, Option<(String, Vec<String
 #[gpui::test]
 fn qa_lsp_format_on_paste_is_off_by_default(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-fmtoff");
@@ -650,6 +651,7 @@ fn qa_lsp_format_on_paste_is_off_by_default(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_lsp_format_on_paste_and_type(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-fmton");
@@ -708,6 +710,7 @@ fn qa_run_test_at_cursor_reports_the_failing_assert(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_session_breakpoints_steps_and_end(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-debug");
@@ -770,6 +773,7 @@ fn qa_debug_session_breakpoints_steps_and_end(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_launch_failure_is_reported(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-debugfail");
@@ -813,6 +817,7 @@ fn qa_debug_build_failure_fills_problems(cx: &mut TestAppContext) {
 fn qa_debug_real_lldb_dap_session(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("clang", &["--version"]) && (have("lldb-dap", &["--help"]) || have("xcrun", &["-f", "lldb-dap"]))) {
+        crate::test_sshd::skip_missing("clang,lldb-dap,xcrun");
         return;
     }
     let dir = qa_dir("qa-reallldb");
@@ -862,6 +867,7 @@ fn qa_debug_real_lldb_dap_session(cx: &mut TestAppContext) {
 fn qa_debug_real_cargo_project_without_config(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("cargo", &["--version"]) && (have("lldb-dap", &["--help"]) || have("xcrun", &["-f", "lldb-dap"]))) {
+        crate::test_sshd::skip_missing("cargo,lldb-dap,xcrun");
         return;
     }
     let dir = qa_dir("qa-realrust");
@@ -896,6 +902,7 @@ fn qa_debug_real_cargo_project_without_config(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_conditional_and_logpoints(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-debugcond");
@@ -956,6 +963,7 @@ fn qa_debug_conditional_and_logpoints(cx: &mut TestAppContext) {
 fn qa_debug_real_conditional_breakpoint_and_inline_values(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("clang", &["--version"]) && (have("lldb-dap", &["--help"]) || have("xcrun", &["-f", "lldb-dap"]))) {
+        crate::test_sshd::skip_missing("clang,lldb-dap,xcrun");
         return;
     }
     let dir = qa_dir("qa-realcond");
@@ -1014,6 +1022,7 @@ fn qa_debug_real_conditional_breakpoint_and_inline_values(cx: &mut TestAppContex
 #[gpui::test]
 fn qa_debug_real_debugpy_session(cx: &mut TestAppContext) {
     if !std::process::Command::new("python3").args(["-c", "import debugpy"]).output().map(|o| o.status.success()).unwrap_or(false) {
+        crate::test_sshd::skip_missing("python3,debugpy");
         return;
     }
     let dir = qa_dir("qa-realpy");
@@ -1047,6 +1056,7 @@ fn qa_debug_real_debugpy_session(cx: &mut TestAppContext) {
 fn qa_debug_real_delve_session(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("go", &["version"]) && have("dlv", &["version"])) {
+        crate::test_sshd::skip_missing("go,dlv");
         return;
     }
     let dir = qa_dir("qa-realgo");
@@ -1078,6 +1088,7 @@ fn qa_debug_real_delve_session(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_real_node_session(cx: &mut TestAppContext) {
     if std::process::Command::new("node").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        crate::test_sshd::skip_missing("node");
         return;
     }
     if std::path::Path::new("/tmp/cy-js-debug/js-debug/src/dapDebugServer.js").is_file() && crate::debug_config::find_js_debug().is_none() {
@@ -1138,6 +1149,7 @@ fn qa_workspace_file_opens_its_first_folder(cx: &mut TestAppContext) {
 fn qa_debug_real_symlinked_project_path(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("clang", &["--version"]) && (have("lldb-dap", &["--help"]) || have("xcrun", &["-f", "lldb-dap"]))) {
+        crate::test_sshd::skip_missing("clang,lldb-dap,xcrun");
         return;
     }
     let real = qa_dir("qa-symreal");
@@ -1174,6 +1186,7 @@ fn qa_debug_real_symlinked_project_path(cx: &mut TestAppContext) {
 fn qa_debug_program_finishing_without_a_hit_explains_itself(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("clang", &["--version"]) && (have("lldb-dap", &["--help"]) || have("xcrun", &["-f", "lldb-dap"]))) {
+        crate::test_sshd::skip_missing("clang,lldb-dap,xcrun");
         return;
     }
     let dir = qa_dir("qa-nohit");
@@ -1264,6 +1277,7 @@ fn qa_workspace_file_adds_all_folders_to_this_window(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_multi_root_search_quick_open_tasks_and_lsp(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let api = std::fs::canonicalize(qa_dir("qa-mr2-api")).unwrap();
@@ -1502,6 +1516,7 @@ fn qa_multi_root_folder_settings_apply_per_file(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_exception_filters_are_sent_and_remembered(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-debugexc");
@@ -1547,6 +1562,7 @@ fn qa_debug_exception_filters_are_sent_and_remembered(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_real_debugpy_breaks_on_a_caught_exception(cx: &mut TestAppContext) {
     if !std::process::Command::new("python3").args(["-c", "import debugpy"]).output().map(|o| o.status.success()).unwrap_or(false) {
+        crate::test_sshd::skip_missing("python3,debugpy");
         return;
     }
     let dir = qa_dir("qa-realpyexc");
@@ -1570,6 +1586,7 @@ fn qa_debug_real_debugpy_breaks_on_a_caught_exception(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_threads_and_attach_configuration(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-debugthreads");
@@ -1607,6 +1624,7 @@ fn qa_debug_threads_and_attach_configuration(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_debug_real_debugpy_attach_and_threads(cx: &mut TestAppContext) {
     if !std::process::Command::new("python3").args(["-c", "import debugpy"]).output().map(|o| o.status.success()).unwrap_or(false) {
+        crate::test_sshd::skip_missing("python3,debugpy");
         return;
     }
     let dir = qa_dir("qa-realattach");
@@ -1672,6 +1690,7 @@ fn qa_debug_real_debugpy_attach_and_threads(cx: &mut TestAppContext) {
 fn qa_debug_real_data_breakpoint(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("clang", &["--version"]) && (have("lldb-dap", &["--help"]) || have("xcrun", &["-f", "lldb-dap"]))) {
+        crate::test_sshd::skip_missing("clang,lldb-dap,xcrun");
         return;
     }
     let dir = qa_dir("qa-realdata");
@@ -1902,6 +1921,7 @@ pub(crate) fn ssh_open_file(wb: &Entity<Workbench>, cx: &mut VisualTestContext, 
 #[gpui::test]
 fn qa_ssh_debug_session(cx: &mut TestAppContext) {
     if !std::process::Command::new("python3").args(["-c", "import debugpy"]).output().map(|o| o.status.success()).unwrap_or(false) {
+        crate::test_sshd::skip_missing("python3,debugpy");
         return;
     }
     let Some(_sshd) = crate::test_sshd::start("qa-remote-debug") else { return };
@@ -1934,6 +1954,7 @@ fn qa_ssh_debug_session(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_ssh_debug_attach_through_a_port_forward(cx: &mut TestAppContext) {
     if !std::process::Command::new("python3").args(["-c", "import debugpy"]).output().map(|o| o.status.success()).unwrap_or(false) {
+        crate::test_sshd::skip_missing("python3,debugpy");
         return;
     }
     let Some(_sshd) = crate::test_sshd::start("qa-remote-attach") else { return };
@@ -1999,6 +2020,7 @@ fn qa_ssh_debug_attach_through_a_port_forward(cx: &mut TestAppContext) {
 fn qa_ssh_debug_go_over_reverse_forward(cx: &mut TestAppContext) {
     let have = |cmd: &str, args: &[&str]| std::process::Command::new(cmd).args(args).output().map(|o| o.status.success()).unwrap_or(false);
     if !(have("go", &["version"]) && have("dlv", &["version"])) {
+        crate::test_sshd::skip_missing("go,dlv");
         return;
     }
     let Some(_sshd) = crate::test_sshd::start("qa-remote-go") else { return };
@@ -2031,6 +2053,7 @@ fn qa_ssh_debug_go_over_reverse_forward(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_ssh_debug_node_over_forward(cx: &mut TestAppContext) {
     if std::process::Command::new("node").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        crate::test_sshd::skip_missing("node");
         return;
     }
     if std::path::Path::new("/tmp/cy-js-debug/js-debug/src/dapDebugServer.js").is_file() && crate::debug_config::find_js_debug().is_none() {
@@ -2070,6 +2093,7 @@ fn qa_ssh_debug_node_over_forward(cx: &mut TestAppContext) {
 #[gpui::test]
 fn qa_lsp_question_is_asked_and_answered(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("qa-lspask");
@@ -2128,7 +2152,7 @@ while True:
     let wait = |cx: &mut VisualTestContext, what: &str, mut done: Box<dyn FnMut(&mut VisualTestContext) -> bool>| {
         let start = std::time::Instant::now();
         while !done(cx) {
-            assert!(start.elapsed() < Duration::from_secs(10), "timed out: {what}");
+            assert!(start.elapsed() < Duration::from_secs(10 * crate::test_sshd::timeout_scale()), "timed out: {what}");
             cx.run_until_parked();
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -2143,7 +2167,7 @@ while True:
     cx.simulate_keystrokes("escape");
     let start = std::time::Instant::now();
     while read().lines().count() < 2 {
-        assert!(start.elapsed() < Duration::from_secs(10), "second reply never arrived");
+        assert!(start.elapsed() < Duration::from_secs(10 * crate::test_sshd::timeout_scale()), "second reply never arrived");
         cx.run_until_parked();
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -2174,7 +2198,7 @@ fn qa_hung_git_status_is_abandoned_and_refresh_recovers(cx: &mut TestAppContext)
     });
     let start = std::time::Instant::now();
     while wb.read_with(cx, |wb, _| wb.git_status()).is_none() {
-        assert!(start.elapsed() < Duration::from_secs(10), "refresh got stuck");
+        assert!(start.elapsed() < Duration::from_secs(10 * crate::test_sshd::timeout_scale()), "refresh got stuck");
         tick(cx, 1);
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -2283,6 +2307,7 @@ while True:
 #[gpui::test]
 fn lsp_inlay_hints_folding_links_prepare_rename_and_output(cx: &mut TestAppContext) {
     if std::process::Command::new("python3").arg("-V").output().is_err() {
+        crate::test_sshd::skip_missing("python3");
         return;
     }
     let dir = qa_dir("lsp-extras");

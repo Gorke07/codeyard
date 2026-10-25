@@ -21,24 +21,61 @@ fn keygen(path: &Path) -> bool {
     Command::new("ssh-keygen").args(["-q", "-t", "ed25519", "-N", "", "-f"]).arg(path).status().is_ok_and(|s| s.success())
 }
 
-/// `None`: no sshd or agent binary (the test is skipped).
+/// Env switch for CI jobs that ship sshd: a skip below becomes a failure, so a broken runner cannot turn the SSH tests into no-ops.
+const REQUIRE: &str = "CODEYARD_REQUIRE_SSHD";
+
+/// Slow runners (instrumented coverage builds) multiply every `wait_secs` limit with `CODEYARD_TEST_TIMEOUT_SCALE` (default 1).
+pub fn timeout_scale() -> u64 {
+    std::env::var("CODEYARD_TEST_TIMEOUT_SCALE").ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(1)
+}
+
+/// A test that cannot run says so on stderr (visible with `--nocapture` and in failures); with `CODEYARD_REQUIRE_SSHD=1` it fails.
+fn skip<T>(test: &str, why: &str) -> Option<T> {
+    assert!(std::env::var_os(REQUIRE).is_none(), "{test}: cannot run ({why}) and {REQUIRE} is set");
+    eprintln!("SKIPPED {test}: {why} (set {REQUIRE}=1 to make this an error)");
+    None
+}
+
+/// Call right before an early `return` in a test that needs an external tool (python3, node, clang, lldb-dap, debugpy, go, dlv, clangd).
+/// Prints a visible SKIPPED line; `CODEYARD_REQUIRE_TOOLS=1` (or a list such as `python3,clang`) turns the skip into a failure.
+pub fn skip_missing(tools: &str) {
+    let test = std::thread::current().name().unwrap_or("?").to_string();
+    if let Some(req) = std::env::var("CODEYARD_REQUIRE_TOOLS").ok().filter(|r| !r.is_empty()) {
+        let wanted = req == "1" || tools.split(',').any(|t| req.split(',').any(|r| r == t));
+        assert!(!wanted, "{test}: needs {tools}, which is unavailable, and CODEYARD_REQUIRE_TOOLS={req}");
+    }
+    eprintln!("SKIPPED {test}: needs {tools}, which is unavailable (set CODEYARD_REQUIRE_TOOLS=1 to make this an error)");
+}
+
+/// `None`: no sshd or agent binary, or the setup failed (the test is skipped, loudly; see `skip`).
 pub fn start(name: &str) -> Option<Sshd> {
+    match try_start(name) {
+        Ok(s) => Some(s),
+        Err(why) => skip(name, &why),
+    }
+}
+
+fn try_start(name: &str) -> Result<Sshd, String> {
     let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let sshd = Path::new("/usr/sbin/sshd");
     // target/<profile>/deps/codeyard-… → target/<profile>/codeyard-agent
-    let agents = std::env::current_exe().ok()?.parent()?.parent()?.to_path_buf();
-    if !sshd.exists() || !agents.join("codeyard-agent").is_file() {
-        return None;
+    let agents = std::env::current_exe().ok().and_then(|e| Some(e.parent()?.parent()?.to_path_buf())).ok_or("no test executable path")?;
+    if !sshd.exists() {
+        return Err("/usr/sbin/sshd is missing".into());
     }
+    if !agents.join("codeyard-agent").is_file() {
+        return Err(format!("{} is missing (build it: cargo build -p agent)", agents.join("codeyard-agent").display()));
+    }
+    let io = |what: &'static str| move |e: std::io::Error| format!("{what}: {e}");
     let dir = std::env::temp_dir().join(format!("codeyard-sshd-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).ok()?;
-    let dir = std::fs::canonicalize(&dir).ok()?;
+    std::fs::create_dir_all(&dir).map_err(io("create temp dir"))?;
+    let dir = std::fs::canonicalize(&dir).map_err(io("canonicalize temp dir"))?;
     if !keygen(&dir.join("host_key")) || !keygen(&dir.join("user_key")) {
-        return None;
+        return Err("ssh-keygen failed".into());
     }
-    std::fs::copy(dir.join("user_key.pub"), dir.join("authorized_keys")).ok()?;
-    let port = std::net::TcpListener::bind("127.0.0.1:0").ok()?.local_addr().ok()?.port();
+    std::fs::copy(dir.join("user_key.pub"), dir.join("authorized_keys")).map_err(io("copy authorized_keys"))?;
+    let port = std::net::TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).map_err(io("pick a port"))?.port();
     let d = dir.display();
     std::fs::write(
         dir.join("sshd_config"),
@@ -47,8 +84,8 @@ pub fn start(name: &str) -> Option<Sshd> {
              PasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM no\nStrictModes no\nPidFile {d}/sshd.pid\nAllowTcpForwarding yes\n"
         ),
     )
-    .ok()?;
-    let user = std::env::var("USER").ok()?;
+    .map_err(io("write sshd_config"))?;
+    let user = std::env::var("USER").map_err(|_| "USER is not set")?;
     std::fs::write(
         dir.join("ssh_config"),
         format!(
@@ -56,12 +93,12 @@ pub fn start(name: &str) -> Option<Sshd> {
                IdentityAgent none\n  UserKnownHostsFile {d}/known_hosts\n  StrictHostKeyChecking accept-new\n"
         ),
     )
-    .ok()?;
-    let child = Command::new(sshd).arg("-D").arg("-f").arg(dir.join("sshd_config")).stderr(Stdio::null()).spawn().ok()?;
+    .map_err(io("write ssh_config"))?;
+    let child = Command::new(sshd).arg("-D").arg("-f").arg(dir.join("sshd_config")).stderr(Stdio::null()).spawn().map_err(io("spawn sshd"))?;
     let start = std::time::Instant::now();
     while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
         if start.elapsed().as_secs() > 5 {
-            return None;
+            return Err("sshd did not listen within 5 s".into());
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
@@ -71,7 +108,7 @@ pub fn start(name: &str) -> Option<Sshd> {
         std::env::set_var("CODEYARD_REMOTE_DIR", dir.join("remote"));
         std::env::set_var("CODEYARD_AGENT_DIR", &agents);
     }
-    Some(Sshd { dir, port, child, _turn: turn })
+    Ok(Sshd { dir, port, child, _turn: turn })
 }
 
 impl Sshd {
@@ -120,7 +157,7 @@ pub fn start_fake_docker(name: &str) -> Option<FakeDocker> {
     let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
     let agents = std::env::current_exe().ok()?.parent()?.parent()?.to_path_buf();
     if !agents.join("codeyard-agent").is_file() {
-        return None;
+        return skip(name, "codeyard-agent is missing (build it: cargo build -p agent)");
     }
     let dir = std::env::temp_dir().join(format!("codeyard-fakedocker-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
