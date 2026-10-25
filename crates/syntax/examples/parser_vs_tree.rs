@@ -1,4 +1,5 @@
 //! Parse cost: the tree, or the parser's internal buffers?
+#[cfg(target_os = "macos")]
 fn footprint_mb() -> f64 {
     // SAFETY: rusage_info_v4 is plain integers, so all-zero is valid.
     let mut info: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
@@ -7,6 +8,12 @@ fn footprint_mb() -> f64 {
     info.ri_phys_footprint as f64 / 1_048_576.0
 }
 
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("parser_vs_tree measures the macOS physical footprint and only runs on macOS");
+}
+
+#[cfg(target_os = "macos")]
 fn main() {
     let path = std::env::args().nth(1).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
