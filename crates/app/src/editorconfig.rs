@@ -416,6 +416,9 @@ mod tests {
         assert!(f.sections[0].re.is_none(), "overlong glob is invalid");
         assert!(f.sections[1].re.is_none(), "huge range is invalid, not truncated into a wrong match");
         assert!(rules_for(&[("/r".into(), Arc::new(f))], "/r/f5000.x").is_empty());
-        assert!(t.elapsed().as_millis() < 1500, "{:?}", t.elapsed());
+        // A quadratic blow-up on these inputs takes minutes, so the limit only has to be far from the ~0.4 s a laptop needs;
+        // CI runners are several times slower.
+        let limit = 5_000 * u128::from(crate::test_sshd::timeout_scale());
+        assert!(t.elapsed().as_millis() < limit, "{:?}", t.elapsed());
     }
 }

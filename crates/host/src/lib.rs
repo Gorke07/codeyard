@@ -940,6 +940,8 @@ mod tests {
     }
 
     /// Closing a host tells the agent (`Bye`): its session ends at once.
+    // Unix only: it opens a pty running `/bin/sh`. The ConPTY side has its own tests below.
+    #[cfg(unix)]
     #[test]
     fn dropping_a_host_ends_the_agent_session_immediately() {
         let (req_r, req_w) = std::io::pipe().unwrap();
