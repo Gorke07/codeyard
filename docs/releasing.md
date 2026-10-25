@@ -7,6 +7,9 @@ The `release.yml` workflow builds and publishes a release when a `vX.Y.Z` tag is
 3. `windows` builds the ZIP and the setup EXE from those agents and uploads them as an artifact.
 4. `publish` merges the checksums, verifies every file against them and creates the release in one step.
 
+You can run the whole workflow without a tag (Actions, release, Run workflow): it builds and checks everything, keeps the files
+as artifacts and creates no release. Do that before the first tag of a new platform or a changed script.
+
 Nothing is published before all of them succeed, so a failed Windows build leaves no half release: fix it and push the tag
 again (delete the tag first with `git push origin :refs/tags/vX.Y.Z`; no release exists yet to remove). The steps below are
 the same procedure by hand, for when the workflow cannot be used.

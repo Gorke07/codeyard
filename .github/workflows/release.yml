@@ -3,9 +3,12 @@ name: release
 # The release notes are the matching section of CHANGELOG.md.
 # Nothing is published until every platform has built: macos and windows only upload artifacts,
 # the last job creates the release in one step, so a failed Windows build never leaves a half release.
+# Run it by hand (Actions > release > Run workflow) for a dry run: everything is built, bundled and checked
+# and the files stay as artifacts, but no release is created.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,9 +22,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check tag, Cargo version and changelog agree
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           CARGO=$(cargo metadata --no-deps --format-version 1 | python3 -c \
             'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="app"))')
+          # A dry run has no tag: use the Cargo version, so only the changelog section is checked.
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="$CARGO"; fi
           [ "$VERSION" = "$CARGO" ] || { echo "tag $VERSION != Cargo version $CARGO"; exit 1; }
           grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "CHANGELOG.md has no [$VERSION] section"; exit 1; }
       - run: scripts/arch-check.sh
@@ -36,7 +40,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Read the version from the tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=$(sed -n 's/^version = \"\(.*\)\"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_ENV"
+          fi
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -190,8 +199,16 @@ jobs:
           [ "$(grep -c . SHA256SUMS.txt)" -ge 4 ] || { echo "expected at least the DMG, tar.gz, ZIP and setup EXE"; exit 1; }
           ls -l
       - name: Create the release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "$GITHUB_REF_NAME" --notes-file notes/notes.md --verify-tag
+      - name: Dry run: show what would be published
+        if: github.ref_type != 'tag'
+        run: |
+          echo "Dry run: no release created. Files that would be attached:"
+          ls -l dist
+          echo "--- release notes ---"
+          cat notes/notes.md
